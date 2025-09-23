@@ -1,0 +1,300 @@
+const { User, Role, AuditLog } = require('../models');
+
+// Get all users with pagination and filtering
+const getAllUsers = async (queryParams) => {
+  const {
+    page = 1,
+    limit = 10,
+    search = '',
+    department = '',
+    role = '',
+    isActive = ''
+  } = queryParams;
+
+  const query = {};
+
+  // Search functionality
+  if (search) {
+    query.$or = [
+      { firstName: { $regex: search, $options: 'i' } },
+      { lastName: { $regex: search, $options: 'i' } },
+      { email: { $regex: search, $options: 'i' } },
+      { employeeId: { $regex: search, $options: 'i' } }
+    ];
+  }
+
+  // Filter by department
+  if (department) {
+    query.department = department;
+  }
+
+  // Filter by role
+  if (role) {
+    const roleObj = await Role.findOne({ name: role });
+    if (roleObj) {
+      query.role = roleObj._id;
+    }
+  }
+
+  // Filter by active status
+  if (isActive !== '') {
+    query.isActive = isActive === 'true';
+  }
+
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const users = await User.find(query)
+    .populate('role', 'name description')
+    .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil')
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(parseInt(limit));
+
+  const totalUsers = await User.countDocuments(query);
+  const totalPages = Math.ceil(totalUsers / parseInt(limit));
+
+  return {
+    success: true,
+    data: {
+      users,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalUsers,
+        hasNext: parseInt(page) < totalPages,
+        hasPrev: parseInt(page) > 1
+      }
+    }
+  };
+};
+
+// Get user by ID
+const getUserById = async (userId) => {
+  const user = await User.findById(userId)
+    .populate('role')
+    .populate('role.permissions')
+    .populate('createdBy', 'firstName lastName email')
+    .populate('updatedBy', 'firstName lastName email')
+    .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil');
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  return {
+    success: true,
+    data: { user }
+  };
+};
+
+// Create new user
+const createUser = async (userData, createdBy) => {
+  const {
+    firstName,
+    lastName,
+    email,
+    phone,
+    password,
+    roleId,
+    department,
+    position,
+    profilePhoto
+  } = userData;
+
+  // Check if role exists
+  const role = await Role.findById(roleId);
+  if (!role || !role.isActive) {
+    throw new Error('Invalid or inactive role');
+  }
+
+  // Create user object
+  const newUserData = {
+    firstName: firstName.trim(),
+    lastName: lastName.trim(),
+    email: email.toLowerCase().trim(),
+    phone: phone.trim(),
+    password,
+    role: roleId,
+    department,
+    position: position.trim(),
+    profilePhoto: profilePhoto || null,
+    createdBy: createdBy,
+    isActive: true
+  };
+
+  const user = new User(newUserData);
+  await user.save();
+
+  // Log user creation
+  await AuditLog.logAction({
+    user: createdBy,
+    action: 'CREATE',
+    module: 'users',
+    resourceType: 'User',
+    resourceId: user._id.toString(),
+    description: `Created new user: ${user.fullName} (${user.email})`,
+    newValues: {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone,
+      department: user.department,
+      position: user.position,
+      role: role.name
+    }
+  });
+
+  // Return user without sensitive data
+  const userResponse = await User.findById(user._id)
+    .populate('role', 'name description')
+    .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil');
+
+  return {
+    success: true,
+    message: 'User created successfully',
+    data: { user: userResponse }
+  };
+};
+
+// Update user
+const updateUser = async (userId, updateData, updatedBy) => {
+  // Find existing user
+  const existingUser = await User.findById(userId);
+  if (!existingUser) {
+    throw new Error('User not found');
+  }
+
+  // Store old values for audit log
+  const oldValues = {
+    firstName: existingUser.firstName,
+    lastName: existingUser.lastName,
+    email: existingUser.email,
+    phone: existingUser.phone,
+    department: existingUser.department,
+    position: existingUser.position,
+    isActive: existingUser.isActive
+  };
+
+  // Remove sensitive fields that shouldn't be updated via this route
+  delete updateData.password;
+  delete updateData.loginAttempts;
+  delete updateData.lockUntil;
+  delete updateData.passwordResetToken;
+  delete updateData.passwordResetExpires;
+
+  // Validate role if provided
+  if (updateData.roleId) {
+    const role = await Role.findById(updateData.roleId);
+    if (!role || !role.isActive) {
+      throw new Error('Invalid or inactive role');
+    }
+    updateData.role = updateData.roleId;
+    delete updateData.roleId;
+  }
+
+  // Add updatedBy field
+  updateData.updatedBy = updatedBy;
+
+  // Update user
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    updateData,
+    { new: true, runValidators: true }
+  )
+    .populate('role', 'name description')
+    .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil');
+
+  // Log user update
+  await AuditLog.logAction({
+    user: updatedBy,
+    action: 'UPDATE',
+    module: 'users',
+    resourceType: 'User',
+    resourceId: userId,
+    description: `Updated user: ${updatedUser.fullName} (${updatedUser.email})`,
+    oldValues,
+    newValues: {
+      firstName: updatedUser.firstName,
+      lastName: updatedUser.lastName,
+      email: updatedUser.email,
+      phone: updatedUser.phone,
+      department: updatedUser.department,
+      position: updatedUser.position,
+      isActive: updatedUser.isActive
+    }
+  });
+
+  return {
+    success: true,
+    message: 'User updated successfully',
+    data: { user: updatedUser }
+  };
+};
+
+// Delete user (soft delete)
+const deleteUser = async (userId, deletedBy) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  // Soft delete by setting isActive to false
+  user.isActive = false;
+  user.updatedBy = deletedBy;
+  await user.save();
+
+  // Log user deletion
+  await AuditLog.logAction({
+    user: deletedBy,
+    action: 'DELETE',
+    module: 'users',
+    resourceType: 'User',
+    resourceId: userId,
+    description: `Deactivated user: ${user.fullName} (${user.email})`,
+    oldValues: { isActive: true },
+    newValues: { isActive: false }
+  });
+
+  return {
+    success: true,
+    message: 'User deactivated successfully'
+  };
+};
+
+// Reactivate user
+const reactivateUser = async (userId, reactivatedBy) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  user.isActive = true;
+  user.updatedBy = reactivatedBy;
+  await user.save();
+
+  // Log user reactivation
+  await AuditLog.logAction({
+    user: reactivatedBy,
+    action: 'UPDATE',
+    module: 'users',
+    resourceType: 'User',
+    resourceId: userId,
+    description: `Reactivated user: ${user.fullName} (${user.email})`,
+    oldValues: { isActive: false },
+    newValues: { isActive: true }
+  });
+
+  return {
+    success: true,
+    message: 'User reactivated successfully'
+  };
+};
+
+module.exports = {
+  getAllUsers,
+  getUserById,
+  createUser,
+  updateUser,
+  deleteUser,
+  reactivateUser
+};

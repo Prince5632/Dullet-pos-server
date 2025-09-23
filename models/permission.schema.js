@@ -1,0 +1,108 @@
+const mongoose = require('mongoose');
+
+const permissionSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true
+  },
+  module: {
+    type: String,
+    required: true,
+    enum: [
+      'users',
+      'roles',
+      'orders',
+      'billing',
+      'stock',
+      'production',
+      'godowns',
+      'customers',
+      'employees',
+      'reports',
+      'settings'
+    ]
+  },
+  action: {
+    type: String,
+    required: true,
+    enum: ['create', 'read', 'update', 'delete', 'approve', 'manage']
+  },
+  description: {
+    type: String,
+    required: true
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  }
+}, {
+  timestamps: true
+});
+
+// Compound index for module + action combination
+permissionSchema.index({ module: 1, action: 1 }, { unique: true });
+
+// Static method to seed default permissions
+permissionSchema.statics.seedDefaultPermissions = async function() {
+  const defaultPermissions = [
+    // User Management
+    { name: 'users.create', module: 'users', action: 'create', description: 'Create new users' },
+    { name: 'users.read', module: 'users', action: 'read', description: 'View users' },
+    { name: 'users.update', module: 'users', action: 'update', description: 'Update user details' },
+    { name: 'users.delete', module: 'users', action: 'delete', description: 'Delete users' },
+    { name: 'users.manage', module: 'users', action: 'manage', description: 'Full user management access' },
+    
+    // Role Management
+    { name: 'roles.create', module: 'roles', action: 'create', description: 'Create new roles' },
+    { name: 'roles.read', module: 'roles', action: 'read', description: 'View roles' },
+    { name: 'roles.update', module: 'roles', action: 'update', description: 'Update roles' },
+    { name: 'roles.delete', module: 'roles', action: 'delete', description: 'Delete roles' },
+    
+    // Order Management
+    { name: 'orders.create', module: 'orders', action: 'create', description: 'Create new orders' },
+    { name: 'orders.read', module: 'orders', action: 'read', description: 'View orders' },
+    { name: 'orders.update', module: 'orders', action: 'update', description: 'Update orders' },
+    { name: 'orders.delete', module: 'orders', action: 'delete', description: 'Delete orders' },
+    { name: 'orders.approve', module: 'orders', action: 'approve', description: 'Approve orders' },
+    
+    // Stock Management
+    { name: 'stock.create', module: 'stock', action: 'create', description: 'Add stock entries' },
+    { name: 'stock.read', module: 'stock', action: 'read', description: 'View stock' },
+    { name: 'stock.update', module: 'stock', action: 'update', description: 'Update stock' },
+    { name: 'stock.delete', module: 'stock', action: 'delete', description: 'Delete stock entries' },
+    
+    // Production Management
+    { name: 'production.create', module: 'production', action: 'create', description: 'Create production batches' },
+    { name: 'production.read', module: 'production', action: 'read', description: 'View production data' },
+    { name: 'production.update', module: 'production', action: 'update', description: 'Update production status' },
+    
+    // Godown Management
+    { name: 'godowns.create', module: 'godowns', action: 'create', description: 'Create new godowns' },
+    { name: 'godowns.read', module: 'godowns', action: 'read', description: 'View godowns' },
+    { name: 'godowns.update', module: 'godowns', action: 'update', description: 'Update godown details' },
+    { name: 'godowns.delete', module: 'godowns', action: 'delete', description: 'Delete godowns' },
+    
+    // Billing
+    { name: 'billing.create', module: 'billing', action: 'create', description: 'Create invoices' },
+    { name: 'billing.read', module: 'billing', action: 'read', description: 'View billing information' },
+    { name: 'billing.update', module: 'billing', action: 'update', description: 'Update billing details' },
+    
+    // Reports
+    { name: 'reports.read', module: 'reports', action: 'read', description: 'View reports' },
+    
+    // Settings
+    { name: 'settings.manage', module: 'settings', action: 'manage', description: 'Manage system settings' }
+  ];
+
+  for (const permission of defaultPermissions) {
+    await this.findOneAndUpdate(
+      { name: permission.name },
+      permission,
+      { upsert: true, new: true }
+    );
+  }
+};
+
+module.exports = mongoose.model('Permission', permissionSchema);
