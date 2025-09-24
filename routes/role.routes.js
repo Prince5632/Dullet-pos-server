@@ -1,11 +1,14 @@
 const express = require('express');
 const roleController = require('../controllers/role.controller');
-const { authenticate, authorize } = require('../middlewares/auth.middleware');
+const { authenticate, authorize, authorizeAny } = require('../middlewares/auth.middleware');
 
 const router = express.Router();
 
 // Get all roles
-router.get('/', authenticate, authorize('roles.read'), roleController.getAllRoles);
+router.get('/', authenticate, authorizeAny(['roles.read', 'users.create']), roleController.getAllRoles);
+
+// Get available permissions (must be before /:id routes)
+router.get('/permissions/available', authenticate, authorize('roles.read'), roleController.getAvailablePermissions);
 
 // Get role by ID
 router.get('/:id', authenticate, authorize('roles.read'), roleController.getRoleById);
@@ -27,8 +30,5 @@ router.get('/:id/permissions', authenticate, authorize('roles.read'), roleContro
 
 // Update role permissions
 router.put('/:id/permissions', authenticate, authorize('roles.update'), roleController.updateRolePermissions);
-
-// Get available permissions (must be before /:id routes)
-router.get('/permissions/available', authenticate, authorize('roles.read'), roleController.getAvailablePermissions);
 
 module.exports = router;

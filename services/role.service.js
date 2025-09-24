@@ -140,9 +140,13 @@ const updateRole = async (roleId, updateData, updatedBy) => {
     throw new Error('Role not found');
   }
 
-  // Prevent updating default roles
+  // Prevent updating default roles unless actor is Super Admin
   if (existingRole.isDefault) {
-    throw new Error('Cannot modify default system roles');
+    const actor = await User.findById(updatedBy).populate('role');
+    const isSuperAdmin = actor && actor.role && actor.role.name === 'Super Admin';
+    if (!isSuperAdmin) {
+      throw new Error('Cannot modify default system roles');
+    }
   }
 
   // Store old values for audit log
@@ -311,9 +315,13 @@ const updateRolePermissions = async (roleId, permissions, updatedBy) => {
     throw new Error('Role not found');
   }
 
-  // Prevent updating default roles
+  // Prevent updating default roles unless actor is Super Admin
   if (role.isDefault) {
-    throw new Error('Cannot modify permissions of default system roles');
+    const actor = await User.findById(updatedBy).populate('role');
+    const isSuperAdmin = actor && actor.role && actor.role.name === 'Super Admin';
+    if (!isSuperAdmin) {
+      throw new Error('Cannot modify permissions of default system roles');
+    }
   }
 
   // Validate permissions
