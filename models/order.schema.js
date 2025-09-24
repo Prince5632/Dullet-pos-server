@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 const orderItemSchema = new mongoose.Schema({
   productName: {
     type: String,
-    required: true,
-    enum: ['Wheat Flour', 'Wheat Bran', 'Custom Product']
+    required: true
   },
   grade: {
     type: String,
@@ -34,7 +33,7 @@ const orderItemSchema = new mongoose.Schema({
   // Additional specifications
   packaging: {
     type: String,
-    enum: ['Standard', 'Custom', '25kg Bags', '50kg Bags'],
+    enum: ['Standard', 'Custom', '5kg Bags', '10kg Bags', '25kg Bags', '50kg Bags', 'Loose'],
     default: 'Standard'
   }
 });

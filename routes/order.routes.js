@@ -72,6 +72,85 @@ router.get('/', authenticate, authorize('orders.read'), orderController.getAllOr
 
 /**
  * @swagger
+ * /api/orders/quick/products:
+ *   get:
+ *     summary: Get quick-order product catalog
+ *     description: Fetch predefined quick-order products with pricing
+ *     tags: [Order Management]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Quick-order products retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get('/quick/products', authenticate, authorize('orders.read'), orderController.getQuickProducts);
+
+/**
+ * @swagger
+ * /api/orders/quick:
+ *   post:
+ *     summary: Create new order (Quick)
+ *     description: Create a new order from quick-order payload
+ *     tags: [Order Management]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - customer
+ *               - items
+ *             properties:
+ *               customer:
+ *                 type: string
+ *                 description: Customer ID
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [productKey]
+ *                   properties:
+ *                     productKey:
+ *                       type: string
+ *                     quantityKg:
+ *                       type: number
+ *                       description: Quantity in KG (alternative to bags)
+ *                     bags:
+ *                       type: number
+ *                       description: Number of bags (multiplied by product bagSizeKg)
+ *                     packaging:
+ *                       type: string
+ *               paymentTerms:
+ *                 type: string
+ *                 enum: [Cash, Credit, Advance]
+ *               priority:
+ *                 type: string
+ *                 enum: [low, normal, high, urgent]
+ *               notes:
+ *                 type: string
+ *               deliveryInstructions:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Order created successfully
+ *       400:
+ *         description: Invalid request data
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.post('/quick', authenticate, authorize('orders.create'), orderController.createQuickOrder);
+
+/**
+ * @swagger
  * /api/orders/{id}:
  *   get:
  *     summary: Get order by ID

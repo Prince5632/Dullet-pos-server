@@ -1,5 +1,6 @@
 const { Order, Customer } = require('../models');
 const { AuditLog } = require('../models');
+const { QUICK_PRODUCTS, getQuickProductsMap } = require('../config/pricing.config');
 
 class OrderService {
   // Get all orders with pagination and filtering
@@ -157,12 +158,27 @@ class OrderService {
 
     // Store old values for audit
     const oldValues = order.toObject();
+    const oldPaidAmount = order.paidAmount;
+    const oldPaymentStatus = order.paymentStatus;
 
     // Update order
     Object.assign(order, updateData, { updatedBy });
     await order.save();
 
     // Log the action
+    // Build a richer description when payment fields changed
+    let description = `Updated order: ${order.orderNumber}`;
+    const changes = [];
+    if (typeof updateData.paidAmount === 'number' && updateData.paidAmount !== oldPaidAmount) {
+      changes.push(`paidAmount ${oldPaidAmount ?? 0} -> ${updateData.paidAmount}`);
+    }
+    if (typeof updateData.paymentStatus === 'string' && updateData.paymentStatus !== oldPaymentStatus) {
+      changes.push(`paymentStatus ${oldPaymentStatus} -> ${updateData.paymentStatus}`);
+    }
+    if (changes.length > 0) {
+      description += ` (${changes.join(', ')})`;
+    }
+
     await AuditLog.create({
       user: updatedBy,
       action: 'UPDATE',
@@ -171,7 +187,7 @@ class OrderService {
       resourceId: order._id.toString(),
       oldValues,
       newValues: order.toObject(),
-      description: `Updated order: ${order.orderNumber}`,
+      description,
       ipAddress: '0.0.0.0',
       userAgent: 'System'
     });
@@ -926,6 +942,73 @@ class OrderService {
         monthlyRevenue
       }
     };
+  }
+
+  // Quick-order: expose catalog
+  getQuickProducts() {
+    return {
+      success: true,
+      data: { products: QUICK_PRODUCTS }
+    };
+  }
+
+  // Quick-order: create using product keys and simple qty inputs
+  async createQuickOrder(quickData, createdBy) {
+    const { customer, items = [], paymentTerms = 'Cash', priority = 'normal', notes = '', deliveryInstructions = '' } = quickData || {};
+
+    // Validate customer exists and active
+    const customerDoc = await Customer.findById(customer);
+    if (!customerDoc) throw new Error('Customer not found');
+    if (!customerDoc.isActive) throw new Error('Customer is inactive');
+
+    const productMap = getQuickProductsMap();
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('At least one item is required');
+    }
+
+    // Build standard order items
+    const orderItems = items.map((it, idx) => {
+      const p = productMap[it.productKey];
+      if (!p) throw new Error(`Invalid product key at item ${idx + 1}`);
+
+      // Determine quantity in KG
+      let quantityKg = 0;
+      if (typeof it.quantityKg === 'number' && it.quantityKg > 0) {
+        quantityKg = it.quantityKg;
+      } else if (typeof it.bags === 'number' && it.bags > 0 && p.bagSizeKg) {
+        quantityKg = it.bags * p.bagSizeKg;
+      } else {
+        throw new Error(`Quantity missing or invalid for item ${idx + 1}`);
+      }
+
+      const ratePerUnit = Number(p.pricePerKg);
+      const totalAmount = quantityKg * ratePerUnit;
+
+      return {
+        productName: p.name,
+        grade: '',
+        quantity: quantityKg,
+        unit: 'KG',
+        ratePerUnit,
+        totalAmount,
+        packaging: it.packaging || p.defaultPackaging || 'Standard'
+      };
+    });
+
+    const orderPayload = {
+      customer,
+      items: orderItems,
+      discountPercentage: 0,
+      discount: 0,
+      taxAmount: 0,
+      paymentTerms,
+      priority,
+      deliveryInstructions,
+      notes,
+    };
+
+    // Reuse standard creation flow for validations, numbering and auditing
+    return await this.createOrder(orderPayload, createdBy);
   }
 }
 
