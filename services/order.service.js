@@ -327,6 +327,555 @@ class OrderService {
     };
   }
 
+  // Approve order
+  async approveOrder(orderId, approvedBy, notes = '') {
+    const { User } = require('../models');
+    
+    // Check if user has approval permission
+    const user = await User.findById(approvedBy).populate('role');
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Check if user has permission to approve orders
+    const hasApprovalPermission = await user.hasPermission('orders.approve');
+    if (!hasApprovalPermission) {
+      throw new Error('Only Manager or Admin can approve orders');
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (order.status !== 'pending') {
+      throw new Error('Order is not in pending status');
+    }
+
+    const oldValues = order.toObject();
+
+    // Update order status to approved
+    order.status = 'approved';
+    order.approvedBy = approvedBy;
+    order.approvedDate = new Date();
+    order.updatedBy = approvedBy;
+
+    if (notes) {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[APPROVED] ${notes}` : `[APPROVED] ${notes}`;
+    }
+
+    await order.save();
+
+    // Log the action
+    await AuditLog.create({
+      user: approvedBy,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Approved order: ${order.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    // Populate order data
+    await order.populate('customer', 'customerId businessName contactPersonName phone');
+    await order.populate('createdBy', 'firstName lastName');
+    await order.populate('approvedBy', 'firstName lastName');
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Order approved successfully'
+    };
+  }
+
+  // Reject order
+  async rejectOrder(orderId, rejectedBy, notes = '') {
+    const { User } = require('../models');
+    
+    // Check if user has approval permission
+    const user = await User.findById(rejectedBy).populate('role');
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Check if user has permission to approve/reject orders
+    const hasApprovalPermission = await user.hasPermission('orders.approve');
+    if (!hasApprovalPermission) {
+      throw new Error('Only Manager or Admin can reject orders');
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (order.status !== 'pending') {
+      throw new Error('Order is not in pending status');
+    }
+
+    const oldValues = order.toObject();
+
+    // Update order status to rejected
+    order.status = 'rejected';
+    order.updatedBy = rejectedBy;
+
+    if (notes) {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[REJECTED] ${notes}` : `[REJECTED] ${notes}`;
+    } else {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[REJECTED] Order rejected by ${user.fullName}` : `[REJECTED] Order rejected by ${user.fullName}`;
+    }
+
+    await order.save();
+
+    // Log the action
+    await AuditLog.create({
+      user: rejectedBy,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Rejected order: ${order.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    // Populate order data
+    await order.populate('customer', 'customerId businessName contactPersonName phone');
+    await order.populate('createdBy', 'firstName lastName');
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Order rejected successfully'
+    };
+  }
+
+  // Get pending orders for approval
+  async getPendingOrdersForApproval(query = {}) {
+    const {
+      page = 1,
+      limit = 10,
+      search = '',
+      dateFrom = '',
+      dateTo = '',
+      sortBy = 'orderDate',
+      sortOrder = 'desc'
+    } = query;
+
+    // Build filter object for pending orders only
+    const filter = { status: 'pending' };
+    
+    if (search) {
+      filter.$or = [
+        { orderNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Date range filter
+    if (dateFrom || dateTo) {
+      filter.orderDate = {};
+      if (dateFrom) {
+        filter.orderDate.$gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        filter.orderDate.$lte = new Date(dateTo);
+      }
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
+
+    // Execute queries
+    const [orders, totalOrders] = await Promise.all([
+      Order.find(filter)
+        .populate('customer', 'customerId businessName contactPersonName phone')
+        .populate('createdBy', 'firstName lastName')
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Order.countDocuments(filter)
+    ]);
+
+    const totalPages = Math.ceil(totalOrders / parseInt(limit));
+
+    return {
+      success: true,
+      data: {
+        orders,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalOrders,
+          limit: parseInt(limit),
+          hasNext: parseInt(page) < totalPages,
+          hasPrev: parseInt(page) > 1
+        }
+      }
+    };
+  }
+
+  // Move order to production
+  async moveToProduction(orderId, userId, notes = '') {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (order.status !== 'approved') {
+      throw new Error('Order must be approved before moving to production');
+    }
+
+    const oldValues = order.toObject();
+
+    order.status = 'processing';
+    order.updatedBy = userId;
+
+    if (notes) {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[PRODUCTION] ${notes}` : `[PRODUCTION] ${notes}`;
+    }
+
+    await order.save();
+
+    // Log the action
+    await AuditLog.create({
+      user: userId,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Moved order to production: ${order.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    await order.populate('customer', 'customerId businessName contactPersonName phone');
+    await order.populate('createdBy', 'firstName lastName');
+    await order.populate('approvedBy', 'firstName lastName');
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Order moved to production successfully'
+    };
+  }
+
+  // Mark order as ready for dispatch
+  async markAsReady(orderId, userId, notes = '') {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (order.status !== 'processing') {
+      throw new Error('Order must be in processing status');
+    }
+
+    const oldValues = order.toObject();
+
+    order.status = 'ready';
+    order.updatedBy = userId;
+
+    if (notes) {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[READY] ${notes}` : `[READY] ${notes}`;
+    }
+
+    await order.save();
+
+    // Log the action
+    await AuditLog.create({
+      user: userId,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Marked order as ready: ${order.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    await order.populate('customer', 'customerId businessName contactPersonName phone');
+    await order.populate('createdBy', 'firstName lastName');
+    await order.populate('approvedBy', 'firstName lastName');
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Order marked as ready for dispatch'
+    };
+  }
+
+  // Dispatch order
+  async dispatchOrder(orderId, userId, notes = '') {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (order.status !== 'ready') {
+      throw new Error('Order must be ready for dispatch');
+    }
+
+    const oldValues = order.toObject();
+
+    order.status = 'dispatched';
+    order.dispatchDate = new Date();
+    order.updatedBy = userId;
+
+    if (notes) {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[DISPATCHED] ${notes}` : `[DISPATCHED] ${notes}`;
+    }
+
+    await order.save();
+
+    // Log the action
+    await AuditLog.create({
+      user: userId,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Dispatched order: ${order.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    await order.populate('customer', 'customerId businessName contactPersonName phone');
+    await order.populate('createdBy', 'firstName lastName');
+    await order.populate('approvedBy', 'firstName lastName');
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Order dispatched successfully'
+    };
+  }
+
+  // Mark order as delivered
+  async markAsDelivered(orderId, userId, notes = '') {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (order.status !== 'dispatched') {
+      throw new Error('Order must be dispatched before marking as delivered');
+    }
+
+    const oldValues = order.toObject();
+
+    order.status = 'delivered';
+    order.deliveryDate = new Date();
+    order.updatedBy = userId;
+
+    if (notes) {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[DELIVERED] ${notes}` : `[DELIVERED] ${notes}`;
+    }
+
+    await order.save();
+
+    // Log the action
+    await AuditLog.create({
+      user: userId,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Marked order as delivered: ${order.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    await order.populate('customer', 'customerId businessName contactPersonName phone');
+    await order.populate('createdBy', 'firstName lastName');
+    await order.populate('approvedBy', 'firstName lastName');
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Order marked as delivered'
+    };
+  }
+
+  // Complete order
+  async completeOrder(orderId, userId, notes = '') {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (order.status !== 'delivered') {
+      throw new Error('Order must be delivered before completing');
+    }
+
+    const oldValues = order.toObject();
+
+    order.status = 'completed';
+    order.updatedBy = userId;
+
+    if (notes) {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[COMPLETED] ${notes}` : `[COMPLETED] ${notes}`;
+    }
+
+    await order.save();
+
+    // Log the action
+    await AuditLog.create({
+      user: userId,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Completed order: ${order.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    await order.populate('customer', 'customerId businessName contactPersonName phone');
+    await order.populate('createdBy', 'firstName lastName');
+    await order.populate('approvedBy', 'firstName lastName');
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Order completed successfully'
+    };
+  }
+
+  // Cancel order
+  async cancelOrder(orderId, userId, notes = '') {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (!['pending', 'approved', 'processing'].includes(order.status)) {
+      throw new Error('Cannot cancel order in current status');
+    }
+
+    const oldValues = order.toObject();
+
+    order.status = 'cancelled';
+    order.updatedBy = userId;
+
+    if (notes) {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[CANCELLED] ${notes}` : `[CANCELLED] ${notes}`;
+    } else {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[CANCELLED] Order cancelled` : `[CANCELLED] Order cancelled`;
+    }
+
+    await order.save();
+
+    // Log the action
+    await AuditLog.create({
+      user: userId,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Cancelled order: ${order.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    await order.populate('customer', 'customerId businessName contactPersonName phone');
+    await order.populate('createdBy', 'firstName lastName');
+    await order.populate('approvedBy', 'firstName lastName');
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Order cancelled successfully'
+    };
+  }
+
+  // Get orders by status
+  async getOrdersByStatus(status, query = {}) {
+    const {
+      page = 1,
+      limit = 10,
+      search = '',
+      dateFrom = '',
+      dateTo = '',
+      sortBy = 'orderDate',
+      sortOrder = 'desc'
+    } = query;
+
+    // Build filter object
+    const filter = { status };
+    
+    if (search) {
+      filter.$or = [
+        { orderNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Date range filter
+    if (dateFrom || dateTo) {
+      filter.orderDate = {};
+      if (dateFrom) {
+        filter.orderDate.$gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        filter.orderDate.$lte = new Date(dateTo);
+      }
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
+
+    // Execute queries
+    const [orders, totalOrders] = await Promise.all([
+      Order.find(filter)
+        .populate('customer', 'customerId businessName contactPersonName phone')
+        .populate('createdBy', 'firstName lastName')
+        .populate('approvedBy', 'firstName lastName')
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Order.countDocuments(filter)
+    ]);
+
+    const totalPages = Math.ceil(totalOrders / parseInt(limit));
+
+    return {
+      success: true,
+      data: {
+        orders,
+        status,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalOrders,
+          limit: parseInt(limit),
+          hasNext: parseInt(page) < totalPages,
+          hasPrev: parseInt(page) > 1
+        }
+      }
+    };
+  }
+
   // Get order statistics
   async getOrderStats() {
     const [
@@ -334,6 +883,7 @@ class OrderService {
       pendingOrders,
       approvedOrders,
       completedOrders,
+      rejectedOrders,
       todayOrders,
       monthlyRevenue
     ] = await Promise.all([
@@ -341,6 +891,7 @@ class OrderService {
       Order.countDocuments({ status: 'pending' }),
       Order.countDocuments({ status: 'approved' }),
       Order.countDocuments({ status: 'completed' }),
+      Order.countDocuments({ status: 'rejected' }),
       Order.countDocuments({
         orderDate: { 
           $gte: new Date(new Date().setHours(0, 0, 0, 0)) 
@@ -370,6 +921,7 @@ class OrderService {
         pendingOrders,
         approvedOrders,
         completedOrders,
+        rejectedOrders,
         todayOrders,
         monthlyRevenue
       }
