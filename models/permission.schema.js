@@ -60,6 +60,12 @@ permissionSchema.statics.seedDefaultPermissions = async function() {
     { name: 'roles.update', module: 'roles', action: 'update', description: 'Update roles' },
     { name: 'roles.delete', module: 'roles', action: 'delete', description: 'Delete roles' },
     
+    // Customer Management
+    { name: 'customers.create', module: 'customers', action: 'create', description: 'Create new customers' },
+    { name: 'customers.read', module: 'customers', action: 'read', description: 'View customers' },
+    { name: 'customers.update', module: 'customers', action: 'update', description: 'Update customers' },
+    { name: 'customers.delete', module: 'customers', action: 'delete', description: 'Delete customers' },
+    
     // Order Management
     { name: 'orders.create', module: 'orders', action: 'create', description: 'Create new orders' },
     { name: 'orders.read', module: 'orders', action: 'read', description: 'View orders' },

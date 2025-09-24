@@ -9,6 +9,8 @@ const { errorHandler, notFound } = require('./utils/errorHandler');
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
 const roleRoutes = require('./routes/role.routes');
+const customerRoutes = require('./routes/customer.routes');
+const orderRoutes = require('./routes/order.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -35,6 +37,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/roles', roleRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/orders', orderRoutes);
 
 /**
  * @swagger
