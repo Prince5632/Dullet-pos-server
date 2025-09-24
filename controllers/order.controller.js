@@ -333,6 +333,32 @@ const getOrderStats = async (req, res) => {
   }
 };
 
+// Quick-order: get catalog
+const getQuickProducts = async (_req, res) => {
+  try {
+    const result = await orderService.getQuickProducts();
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Quick-order: create order from quick payload
+const createQuickOrder = async (req, res) => {
+  try {
+    const result = await orderService.createQuickOrder(req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    if (error.message === 'Customer not found' || error.message === 'Customer is inactive') {
+      res.status(400).json({ success: false, message: error.message });
+    } else if (error.message?.startsWith('Invalid product key') || error.message?.includes('At least one item')) {
+      res.status(400).json({ success: false, message: error.message });
+    } else {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+};
+
 module.exports = {
   getAllOrders,
   getOrderById,
@@ -351,5 +377,7 @@ module.exports = {
   getOrdersByStatus,
   getCustomerOrderHistory,
   getOrderStats
+  , getQuickProducts
+  , createQuickOrder
 };
 
