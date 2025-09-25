@@ -3,7 +3,7 @@ const orderService = require('../services/order.service');
 // Get all orders controller
 const getAllOrders = async (req, res) => {
   try {
-    const result = await orderService.getAllOrders(req.query);
+    const result = await orderService.getAllOrders(req.query, req.user);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({
@@ -323,7 +323,7 @@ const getOrdersByStatus = async (req, res) => {
 // Get order statistics controller
 const getOrderStats = async (req, res) => {
   try {
-    const result = await orderService.getOrderStats();
+    const result = await orderService.getOrderStats(req.query, req.user);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({

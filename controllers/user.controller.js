@@ -43,7 +43,9 @@ const createUser = async (req, res) => {
       password,
       roleId,
       department,
-      position
+      position,
+      primaryGodown,
+      accessibleGodowns
     } = req.body;
 
     // Validation
@@ -63,7 +65,9 @@ const createUser = async (req, res) => {
       roleId,
       department,
       position,
-      profilePhoto: req.file ? req.file.buffer.toString('base64') : null
+      profilePhoto: req.file ? req.file.buffer.toString('base64') : null,
+      primaryGodown,
+      accessibleGodowns
     };
 
     const result = await userService.createUser(userData, req.user._id);

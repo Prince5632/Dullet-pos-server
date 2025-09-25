@@ -287,6 +287,9 @@ router.get('/:id', authenticate, authorize('orders.read'), orderController.getOr
  */
 router.post('/', authenticate, authorize('orders.create'), orderController.createOrder);
 
+// Summary stats (supports godownId in query)
+router.get('/stats/summary', authenticate, authorize('orders.read'), orderController.getOrderStats);
+
 /**
  * @swagger
  * /api/orders/{id}:

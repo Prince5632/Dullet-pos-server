@@ -45,6 +45,8 @@ const getAllUsers = async (queryParams) => {
 
   const users = await User.find(query)
     .populate('role', 'name description')
+    .populate('primaryGodown', 'name location')
+    .populate('accessibleGodowns', 'name location')
     .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil')
     .sort({ createdAt: -1 })
     .skip(skip)
@@ -73,6 +75,8 @@ const getUserById = async (userId) => {
   const user = await User.findById(userId)
     .populate('role')
     .populate('role.permissions')
+    .populate('primaryGodown', 'name location')
+    .populate('accessibleGodowns', 'name location')
     .populate('createdBy', 'firstName lastName email')
     .populate('updatedBy', 'firstName lastName email')
     .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil');
@@ -98,7 +102,9 @@ const createUser = async (userData, createdBy) => {
     roleId,
     department,
     position,
-    profilePhoto
+    profilePhoto,
+    primaryGodown,
+    accessibleGodowns
   } = userData;
 
   // Check if role exists
@@ -118,6 +124,8 @@ const createUser = async (userData, createdBy) => {
     department,
     position: position.trim(),
     profilePhoto: profilePhoto || null,
+    primaryGodown: primaryGodown || null,
+    accessibleGodowns: Array.isArray(accessibleGodowns) ? accessibleGodowns : (primaryGodown ? [primaryGodown] : []),
     createdBy: createdBy,
     isActive: true
   };
@@ -172,7 +180,9 @@ const updateUser = async (userId, updateData, updatedBy) => {
     phone: existingUser.phone,
     department: existingUser.department,
     position: existingUser.position,
-    isActive: existingUser.isActive
+    isActive: existingUser.isActive,
+    primaryGodown: existingUser.primaryGodown,
+    accessibleGodowns: existingUser.accessibleGodowns
   };
 
   // Remove sensitive fields that shouldn't be updated via this route
@@ -190,6 +200,12 @@ const updateUser = async (userId, updateData, updatedBy) => {
     }
     updateData.role = updateData.roleId;
     delete updateData.roleId;
+  }
+
+  // Normalize godown fields if provided
+  if (updateData.primaryGodown === '') delete updateData.primaryGodown;
+  if (updateData.accessibleGodowns && !Array.isArray(updateData.accessibleGodowns)) {
+    updateData.accessibleGodowns = [updateData.accessibleGodowns].filter(Boolean);
   }
 
   // Add updatedBy field
