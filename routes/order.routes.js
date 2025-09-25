@@ -133,6 +133,14 @@ router.get('/quick/products', authenticate, authorize('orders.read'), orderContr
  *               priority:
  *                 type: string
  *                 enum: [low, normal, high, urgent]
+ *               paidAmount:
+ *                 type: number
+ *                 example: 5000
+ *                 description: Amount paid at creation time
+ *               paymentStatus:
+ *                 type: string
+ *                 enum: [pending, partial, paid, overdue]
+ *                 description: If omitted, it will be derived from paidAmount vs total
  *               notes:
  *                 type: string
  *               deliveryInstructions:

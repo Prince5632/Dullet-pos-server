@@ -954,7 +954,7 @@ class OrderService {
 
   // Quick-order: create using product keys and simple qty inputs
   async createQuickOrder(quickData, createdBy) {
-    const { customer, items = [], paymentTerms = 'Cash', priority = 'normal', notes = '', deliveryInstructions = '' } = quickData || {};
+    const { customer, items = [], paymentTerms = 'Cash', priority = 'normal', notes = '', deliveryInstructions = '', paidAmount: inputPaidAmount, paymentStatus: inputPaymentStatus } = quickData || {};
 
     // Validate customer exists and active
     const customerDoc = await Customer.findById(customer);
@@ -995,6 +995,16 @@ class OrderService {
       };
     });
 
+    // Compute totals to derive payment status
+    const computedTotal = orderItems.reduce((sum, it) => sum + (it.totalAmount || 0), 0);
+    const paidAmount = Math.max(0, Number(inputPaidAmount ?? 0));
+    let paymentStatus = inputPaymentStatus;
+    if (!paymentStatus) {
+      if (paidAmount >= computedTotal) paymentStatus = 'paid';
+      else if (paidAmount > 0) paymentStatus = 'partial';
+      else paymentStatus = 'pending';
+    }
+
     const orderPayload = {
       customer,
       items: orderItems,
@@ -1005,6 +1015,8 @@ class OrderService {
       priority,
       deliveryInstructions,
       notes,
+      paidAmount,
+      paymentStatus,
     };
 
     // Reuse standard creation flow for validations, numbering and auditing
