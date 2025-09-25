@@ -14,7 +14,9 @@ const login = async (loginData) => {
           populate: {
             path: 'permissions'
           }
-        });
+        })
+        .populate('primaryGodown', 'name location')
+        .populate('accessibleGodowns', 'name location');
 
       if (!user) {
         throw new Error('Invalid credentials');
@@ -296,6 +298,8 @@ const getProfile = async (userId) => {
             path: 'permissions'
           }
         })
+        .populate('primaryGodown', 'name location')
+        .populate('accessibleGodowns', 'name location')
         .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil');
 
       if (!user) {

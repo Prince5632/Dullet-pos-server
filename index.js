@@ -11,8 +11,10 @@ const userRoutes = require('./routes/user.routes');
 const roleRoutes = require('./routes/role.routes');
 const customerRoutes = require('./routes/customer.routes');
 const orderRoutes = require('./routes/order.routes');
+const godownRoutes = require('./routes/godown.routes');
 
 const app = express();
+const Models = require('./models');
 const PORT = process.env.PORT || 5000;
 
 // Middleware
@@ -39,6 +41,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/godowns', godownRoutes);
 
 /**
  * @swagger
@@ -90,6 +93,10 @@ app.use(errorHandler);
 const startServer = async () => {
   try {
     await connectDB();
+    if (process.env.NODE_ENV !== 'production') {
+      // Seed defaults in non-production for convenience (idempotent)
+      await Models.seedDefaults?.();
+    }
     
     app.listen(PORT, () => {
       console.log(`

@@ -5,6 +5,7 @@ const UserSession = require('./userSession.schema');
 const AuditLog = require('./auditLog.schema');
 const Customer = require('./customer.schema');
 const Order = require('./order.schema');
+const Godown = require('./godown.schema');
 
 module.exports = {
   User,
@@ -13,5 +14,23 @@ module.exports = {
   UserSession,
   AuditLog,
   Customer,
-  Order
+  Order,
+  Godown
+};
+
+// Helper to seed core defaults where available
+module.exports.seedDefaults = async () => {
+  try {
+    if (typeof Permission.seedDefaultPermissions === 'function') {
+      await Permission.seedDefaultPermissions();
+    }
+    if (typeof Role.seedDefaultRoles === 'function') {
+      await Role.seedDefaultRoles();
+    }
+    if (typeof Godown.seedDefaultGodowns === 'function') {
+      await Godown.seedDefaultGodowns();
+    }
+  } catch (e) {
+    console.error('Default seeds failed:', e);
+  }
 };

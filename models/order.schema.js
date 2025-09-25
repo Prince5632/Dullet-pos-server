@@ -49,6 +49,12 @@ const orderSchema = new mongoose.Schema({
     ref: 'Customer',
     required: true
   },
+  // Godown
+  godown: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Godown',
+    required: false
+  },
   // Order Items
   items: [orderItemSchema],
   // Order Totals
@@ -153,6 +159,10 @@ const orderSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  createdByRole: {
+    type: String,
+    required: false
   },
   approvedBy: {
     type: mongoose.Schema.Types.ObjectId,

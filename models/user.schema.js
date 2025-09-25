@@ -52,6 +52,16 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // Godown assignments
+  primaryGodown: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Godown',
+    required: false
+  },
+  accessibleGodowns: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Godown'
+  }],
   isActive: {
     type: Boolean,
     default: true

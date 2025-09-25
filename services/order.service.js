@@ -1,10 +1,10 @@
-const { Order, Customer } = require('../models');
+const { Order, Customer, Godown } = require('../models');
 const { AuditLog } = require('../models');
 const { QUICK_PRODUCTS, getQuickProductsMap } = require('../config/pricing.config');
 
 class OrderService {
   // Get all orders with pagination and filtering
-  async getAllOrders(query = {}) {
+  async getAllOrders(query = {}, currentUser) {
     const {
       page = 1,
       limit = 10,
@@ -50,6 +50,21 @@ class OrderService {
       }
     }
 
+    // Scope by godown if provided in query or by user's accessible godowns
+    if (query.godownId) {
+      filter.godown = query.godownId;
+    } else if (currentUser && currentUser.role && currentUser.role.name !== 'Super Admin') {
+      // Only restrict if not super admin; ensure IDs not populated docs
+      const toIds = (arr) => (arr || []).map(v => (typeof v === 'object' && v?._id ? v._id : v));
+      const accessibleList = currentUser.accessibleGodowns?.length ? toIds(currentUser.accessibleGodowns) : (currentUser.primaryGodown ? [ (typeof currentUser.primaryGodown === 'object' ? currentUser.primaryGodown._id : currentUser.primaryGodown) ] : []);
+      if (accessibleList && accessibleList.length > 0) {
+        filter.godown = { $in: accessibleList };
+      } else {
+        // If user has no assigned godowns, show only their own orders as a fallback
+        filter.createdBy = currentUser._id;
+      }
+    }
+
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
@@ -58,6 +73,7 @@ class OrderService {
     const [orders, totalOrders] = await Promise.all([
       Order.find(filter)
         .populate('customer', 'customerId businessName contactPersonName phone')
+        .populate('godown', 'name location')
         .populate('createdBy', 'firstName lastName')
         .populate('approvedBy', 'firstName lastName')
         .sort(sort)
@@ -89,6 +105,7 @@ class OrderService {
   async getOrderById(orderId) {
     const order = await Order.findById(orderId)
       .populate('customer')
+      .populate('godown', 'name location')
       .populate('createdBy', 'firstName lastName')
       .populate('approvedBy', 'firstName lastName')
       .lean();
@@ -115,11 +132,45 @@ class OrderService {
       throw new Error('Customer is inactive');
     }
 
+    // If godown provided, validate it and product availability
+    if (orderData.godown) {
+      const godown = await Godown.findById(orderData.godown);
+      if (!godown || !godown.isActive) {
+        throw new Error('Invalid or inactive godown');
+      }
+      // Optional: validate allowedProducts
+      if (Array.isArray(godown.allowedProducts) && godown.allowedProducts.length > 0) {
+        const invalidItem = (orderData.items || []).find(it => it.productName && !godown.allowedProducts.includes(it.productName));
+        if (invalidItem) {
+          throw new Error(`Product ${invalidItem.productName} not available in selected godown`);
+        }
+      }
+    }
+
+    // Determine creator role name for audit fields
+    const { User } = require('../models');
+    let creatorRoleName = '';
+    try {
+      const creator = await User.findById(createdBy).populate('role');
+      creatorRoleName = creator?.role?.name || '';
+    } catch {}
+
     // Create order
     const order = new Order({
       ...orderData,
-      createdBy
+      createdBy,
+      createdByRole: creatorRoleName
     });
+
+    // If no godown explicitly provided, infer from user's primary
+    if (!order.godown) {
+      try {
+        const creator = await require('../models').User.findById(createdBy);
+        if (creator?.primaryGodown) {
+          order.godown = creator.primaryGodown;
+        }
+      } catch {}
+    }
 
     await order.save();
 
@@ -892,8 +943,23 @@ class OrderService {
     };
   }
 
-  // Get order statistics
-  async getOrderStats() {
+  // Get order statistics (supports optional godown scoping)
+  async getOrderStats(query = {}, currentUser) {
+    const filter = {};
+    // Scope by explicit godownId
+    if (query.godownId) {
+      filter.godown = query.godownId;
+    } else if (currentUser && currentUser.role && currentUser.role.name !== 'Super Admin') {
+      // Non super-admins limited to their accessible/primary godowns
+      const accessible = currentUser.accessibleGodowns?.length ? currentUser.accessibleGodowns : (currentUser.primaryGodown ? [currentUser.primaryGodown] : []);
+      if (accessible && accessible.length > 0) {
+        filter.godown = { $in: accessible };
+      }
+    }
+
+    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
     const [
       totalOrders,
       pendingOrders,
@@ -903,31 +969,16 @@ class OrderService {
       todayOrders,
       monthlyRevenue
     ] = await Promise.all([
-      Order.countDocuments(),
-      Order.countDocuments({ status: 'pending' }),
-      Order.countDocuments({ status: 'approved' }),
-      Order.countDocuments({ status: 'completed' }),
-      Order.countDocuments({ status: 'rejected' }),
-      Order.countDocuments({
-        orderDate: { 
-          $gte: new Date(new Date().setHours(0, 0, 0, 0)) 
-        }
-      }),
+      Order.countDocuments(filter),
+      Order.countDocuments({ ...filter, status: 'pending' }),
+      Order.countDocuments({ ...filter, status: 'approved' }),
+      Order.countDocuments({ ...filter, status: 'completed' }),
+      Order.countDocuments({ ...filter, status: 'rejected' }),
+      Order.countDocuments({ ...filter, orderDate: { $gte: startOfToday } }),
       Order.aggregate([
-        {
-          $match: {
-            orderDate: {
-              $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-            }
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: '$totalAmount' }
-          }
-        }
-      ]).then(result => result[0]?.total || 0)
+        { $match: { orderDate: { $gte: startOfMonth }, ...(filter.godown ? { godown: filter.godown } : {}) } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+      ]).then(result => (Array.isArray(result) && result[0]?.total) || 0)
     ]);
 
     return {
@@ -954,7 +1005,7 @@ class OrderService {
 
   // Quick-order: create using product keys and simple qty inputs
   async createQuickOrder(quickData, createdBy) {
-    const { customer, items = [], paymentTerms = 'Cash', priority = 'normal', notes = '', deliveryInstructions = '' } = quickData || {};
+    const { customer, items = [], paymentTerms = 'Cash', priority = 'normal', notes = '', deliveryInstructions = '', paidAmount: inputPaidAmount, paymentStatus: inputPaymentStatus } = quickData || {};
 
     // Validate customer exists and active
     const customerDoc = await Customer.findById(customer);
@@ -995,6 +1046,16 @@ class OrderService {
       };
     });
 
+    // Compute totals to derive payment status
+    const computedTotal = orderItems.reduce((sum, it) => sum + (it.totalAmount || 0), 0);
+    const paidAmount = Math.max(0, Number(inputPaidAmount ?? 0));
+    let paymentStatus = inputPaymentStatus;
+    if (!paymentStatus) {
+      if (paidAmount >= computedTotal) paymentStatus = 'paid';
+      else if (paidAmount > 0) paymentStatus = 'partial';
+      else paymentStatus = 'pending';
+    }
+
     const orderPayload = {
       customer,
       items: orderItems,
@@ -1005,6 +1066,8 @@ class OrderService {
       priority,
       deliveryInstructions,
       notes,
+      paidAmount,
+      paymentStatus,
     };
 
     // Reuse standard creation flow for validations, numbering and auditing
