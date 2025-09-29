@@ -298,3 +298,46 @@ module.exports = {
   authorizeAll,
   authorizeRole
 };
+
+// Add middleware to authorize by permission OR role(s)
+// Note: Keeping this export after module.exports above for minimal diff; consumers will import named export
+const authorizePermissionOrRole = (permissionName, roles = []) => {
+  const roleArray = Array.isArray(roles) ? roles : [roles];
+
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      // If user has the permission, allow
+      const hasPermission = await req.user.hasPermission(permissionName);
+      if (hasPermission) return next();
+
+      // Otherwise, allow if user role is in allowed roles
+      await req.user.populate('role');
+      if (req.user.role?.name && roleArray.includes(req.user.role.name)) {
+        return next();
+      }
+
+      await AuditLog.logAction({
+        user: req.user._id,
+        action: 'READ',
+        module: 'auth',
+        resourceType: 'PermissionOrRole',
+        resourceId: `${permissionName}|${roleArray.join(',')}`,
+        description: `Unauthorized access attempt to ${permissionName} or roles: ${roleArray.join(', ')}`,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('User-Agent') || 'Unknown',
+        sessionId: req.session?._id
+      });
+
+      return res.status(403).json({ success: false, message: 'Insufficient permissions' });
+    } catch (error) {
+      console.error('Authorization error:', error);
+      return res.status(500).json({ success: false, message: 'Authorization failed' });
+    }
+  };
+};
+
+module.exports.authorizePermissionOrRole = authorizePermissionOrRole;

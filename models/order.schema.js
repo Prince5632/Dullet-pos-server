@@ -88,15 +88,17 @@ const orderSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: [
-      'pending',      // Created by Sales Executive
-      'approved',     // Approved by Manager
-      'rejected',     // Rejected by Manager
-      'processing',   // In production
-      'ready',        // Ready for dispatch
-      'dispatched',   // Sent to godown
-      'delivered',    // Delivered to customer
-      'completed',    // Order completed
-      'cancelled'     // Cancelled
+      'pending',
+      'approved',
+      'driver_assigned',
+      'out_for_delivery',
+      'delivered',
+      'completed',
+      'cancelled',
+      'rejected',
+      'processing',
+      'ready',
+      'dispatched'
     ],
     default: 'pending'
   },
@@ -114,18 +116,50 @@ const orderSchema = new mongoose.Schema({
     type: Date,
     required: false
   },
-  approvedDate: {
-    type: Date,
-    required: false
+  managerApproval: {
+    type: {
+      approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      approvedAt: { type: Date },
+      notes: { type: String }
+    },
+    default: {}
   },
-  dispatchDate: {
-    type: Date,
-    required: false
+  driverAssignment: {
+    type: {
+      driver: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      assignedAt: { type: Date },
+      pickupAt: { type: Date },
+      deliveryAt: { type: Date },
+      pickupLocation: {
+        latitude: Number,
+        longitude: Number,
+        address: String
+      },
+      deliveryLocation: {
+        latitude: Number,
+        longitude: Number,
+        address: String
+      },
+      driverNotes: { type: String }
+    },
+    default: {}
   },
-  deliveryDate: {
-    type: Date,
-    required: false
+  signatures: {
+    type: {
+      pickupProof: { type: String },
+      driver: { type: String },
+      receiver: { type: String }
+    },
+    default: {}
   },
+  settlements: [
+    {
+      amountCollected: { type: Number, default: 0 },
+      notes: { type: String },
+      recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      recordedAt: { type: Date, default: Date.now }
+    }
+  ],
   // Payment Information
   paymentTerms: {
     type: String,

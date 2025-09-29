@@ -76,6 +76,7 @@ class OrderService {
         .populate('godown', 'name location')
         .populate('createdBy', 'firstName lastName')
         .populate('approvedBy', 'firstName lastName')
+        .populate('driverAssignment.driver', 'firstName lastName phone')
         .sort(sort)
         .skip(skip)
         .limit(parseInt(limit))
@@ -108,6 +109,7 @@ class OrderService {
       .populate('godown', 'name location')
       .populate('createdBy', 'firstName lastName')
       .populate('approvedBy', 'firstName lastName')
+      .populate('driverAssignment.driver', 'firstName lastName phone')
       .lean();
 
     if (!order) {
@@ -397,31 +399,21 @@ class OrderService {
   // Approve order
   async approveOrder(orderId, approvedBy, notes = '') {
     const { User } = require('../models');
-    
-    // Check if user has approval permission
-    const user = await User.findById(approvedBy).populate('role');
-    if (!user) {
-      throw new Error('User not found');
-    }
 
-    // Check if user has permission to approve orders
+    const user = await User.findById(approvedBy).populate('role');
+    if (!user) throw new Error('User not found');
+
     const hasApprovalPermission = await user.hasPermission('orders.approve');
     if (!hasApprovalPermission) {
       throw new Error('Only Manager or Admin can approve orders');
     }
 
     const order = await Order.findById(orderId);
-    if (!order) {
-      throw new Error('Order not found');
-    }
-
-    if (order.status !== 'pending') {
-      throw new Error('Order is not in pending status');
-    }
+    if (!order) throw new Error('Order not found');
+    if (order.status !== 'pending') throw new Error('Order is not in pending status');
 
     const oldValues = order.toObject();
 
-    // Update order status to approved
     order.status = 'approved';
     order.approvedBy = approvedBy;
     order.approvedDate = new Date();
@@ -433,7 +425,6 @@ class OrderService {
 
     await order.save();
 
-    // Log the action
     await AuditLog.create({
       user: approvedBy,
       action: 'UPDATE',
@@ -447,7 +438,6 @@ class OrderService {
       userAgent: 'System'
     });
 
-    // Populate order data
     await order.populate('customer', 'customerId businessName contactPersonName phone');
     await order.populate('createdBy', 'firstName lastName');
     await order.populate('approvedBy', 'firstName lastName');
@@ -459,34 +449,23 @@ class OrderService {
     };
   }
 
-  // Reject order
   async rejectOrder(orderId, rejectedBy, notes = '') {
     const { User } = require('../models');
-    
-    // Check if user has approval permission
-    const user = await User.findById(rejectedBy).populate('role');
-    if (!user) {
-      throw new Error('User not found');
-    }
 
-    // Check if user has permission to approve/reject orders
+    const user = await User.findById(rejectedBy).populate('role');
+    if (!user) throw new Error('User not found');
+
     const hasApprovalPermission = await user.hasPermission('orders.approve');
     if (!hasApprovalPermission) {
       throw new Error('Only Manager or Admin can reject orders');
     }
 
     const order = await Order.findById(orderId);
-    if (!order) {
-      throw new Error('Order not found');
-    }
-
-    if (order.status !== 'pending') {
-      throw new Error('Order is not in pending status');
-    }
+    if (!order) throw new Error('Order not found');
+    if (order.status !== 'pending') throw new Error('Order is not in pending status');
 
     const oldValues = order.toObject();
 
-    // Update order status to rejected
     order.status = 'rejected';
     order.updatedBy = rejectedBy;
 
@@ -498,7 +477,6 @@ class OrderService {
 
     await order.save();
 
-    // Log the action
     await AuditLog.create({
       user: rejectedBy,
       action: 'UPDATE',
@@ -512,7 +490,6 @@ class OrderService {
       userAgent: 'System'
     });
 
-    // Populate order data
     await order.populate('customer', 'customerId businessName contactPersonName phone');
     await order.populate('createdBy', 'firstName lastName');
 
@@ -520,6 +497,239 @@ class OrderService {
       success: true,
       data: { order },
       message: 'Order rejected successfully'
+    };
+  }
+
+  async assignDriver(orderId, driverId, assignedBy, notes = '') {
+    const { User } = require('../models');
+
+    const user = await User.findById(assignedBy).populate('role');
+    if (!user) throw new Error('User not found');
+
+    const hasManagePermission = await user.hasPermission('orders.manage');
+    const isManagerOrAdmin = ['Manager', 'Admin', 'Super Admin'].includes(user.role?.name);
+    
+    if (!hasManagePermission && !isManagerOrAdmin) {
+      throw new Error('Access denied: insufficient permissions');
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) throw new Error('Order not found');
+
+    if (order.status !== 'approved') {
+      throw new Error('Order must be approved before assigning a driver');
+    }
+
+    if (!driverId) {
+      throw new Error('Driver ID is required');
+    }
+
+    const driverUser = await User.findById(driverId).populate('role');
+    if (!driverUser) {
+      throw new Error('Driver not found');
+    }
+
+    if (driverUser.role?.name !== 'Driver') {
+      throw new Error('Selected user is not assigned the Driver role');
+    }
+
+    const oldValues = order.toObject();
+
+    order.status = 'driver_assigned';
+    order.driverAssignment = {
+      driver: driverId,
+      assignedAt: new Date(),
+      driverNotes: notes || ''
+    };
+    order.updatedBy = assignedBy;
+
+    await order.save();
+
+    await AuditLog.create({
+      user: assignedBy,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Assigned driver to order ${order.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    await order.populate('driverAssignment.driver', 'firstName lastName phone');
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Driver assigned successfully'
+    };
+  }
+
+  async unassignDriver(orderId, updatedBy, notes = '') {
+    const { User } = require('../models');
+
+    const user = await User.findById(updatedBy).populate('role');
+    if (!user) throw new Error('User not found');
+
+    const hasManagePermission = await user.hasPermission('orders.manage');
+    const isManagerOrAdmin = ['Manager', 'Admin', 'Super Admin'].includes(user.role?.name);
+    
+    if (!hasManagePermission && !isManagerOrAdmin) {
+      throw new Error('Access denied: insufficient permissions');
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) throw new Error('Order not found');
+
+    if (order.status !== 'driver_assigned') {
+      throw new Error('Cannot unassign driver in current order status');
+    }
+
+    const oldValues = order.toObject();
+
+    order.status = 'approved';
+    order.driverAssignment = {};
+    order.updatedBy = updatedBy;
+
+    if (notes) {
+      order.internalNotes = order.internalNotes ? `${order.internalNotes}\n[DRIVER REMOVED] ${notes}` : `[DRIVER REMOVED] ${notes}`;
+    }
+
+    await order.save();
+
+    await AuditLog.create({
+      user: updatedBy,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Unassigned driver from order ${order.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Driver unassigned successfully'
+    };
+  }
+
+  async markOutForDelivery(orderId, user, { notes = '', location } = {}) {
+    const order = await Order.findById(orderId);
+    if (!order) throw new Error('Order not found');
+
+    if (order.status !== 'driver_assigned') {
+      throw new Error('Order must have an assigned driver before marking out for delivery');
+    }
+
+    const isDriver = user.role?.name === 'Driver';
+    const isAssignedDriver = order.driverAssignment?.driver?.toString() === user._id.toString();
+
+    const hasManagePermission = await require('../models').User.findById(user._id).then(u => u.hasPermission('orders.manage'));
+    const isManagerOrAdmin = ['Manager', 'Admin', 'Super Admin'].includes(user.role?.name);
+    
+    if (!hasManagePermission && !isManagerOrAdmin && !(isDriver && isAssignedDriver)) {
+      throw new Error('Access denied: Cannot mark this order out for delivery');
+    }
+
+    const oldValues = order.toObject();
+
+    order.status = 'out_for_delivery';
+    order.driverAssignment = {
+      ...order.driverAssignment,
+      pickupAt: new Date(),
+      pickupLocation: location,
+      driverNotes: notes || order.driverAssignment?.driverNotes || ''
+    };
+    order.updatedBy = user._id;
+
+    await order.save();
+
+    await AuditLog.create({
+      user: user._id,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Order ${order.orderNumber} marked out for delivery`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Order marked out for delivery'
+    };
+  }
+
+  async recordDelivery(orderId, user, payload = {}) {
+    const order = await Order.findById(orderId);
+    if (!order) throw new Error('Order not found');
+
+    if (order.status !== 'out_for_delivery') {
+      throw new Error('Order must be out for delivery before recording delivery');
+    }
+
+    const isDriver = user.role?.name === 'Driver';
+    const isAssignedDriver = order.driverAssignment?.driver?.toString() === user._id.toString();
+
+    const hasManagePermission = await require('../models').User.findById(user._id).then(u => u.hasPermission('orders.manage'));
+    const isManagerOrAdmin = ['Manager', 'Admin', 'Super Admin'].includes(user.role?.name);
+    
+    if (!hasManagePermission && !isManagerOrAdmin && !(isDriver && isAssignedDriver)) {
+      throw new Error('Access denied: Cannot mark this order as delivered');
+    }
+
+    if (!payload.signatures?.driver || !payload.signatures?.receiver) {
+      throw new Error('Driver and receiver signatures are required');
+    }
+
+    const oldValues = order.toObject();
+
+    order.status = 'delivered';
+    order.driverAssignment = {
+      ...order.driverAssignment,
+      deliveryAt: new Date(),
+      deliveryLocation: payload.location
+    };
+    order.signatures = payload.signatures;
+    order.settlements = [{
+      amountCollected: payload.settlement?.amountCollected || 0,
+      notes: payload.settlement?.notes || '',
+      recordedBy: user._id,
+      recordedAt: new Date()
+    }];
+    order.updatedBy = user._id;
+
+    await order.save();
+
+    await AuditLog.create({
+      user: user._id,
+      action: 'UPDATE',
+      module: 'orders',
+      resourceType: 'Order',
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Order ${order.orderNumber} marked as delivered`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    await order.populate('driverAssignment.driver', 'firstName lastName phone');
+
+    return {
+      success: true,
+      data: { order },
+      message: 'Order marked as delivered'
     };
   }
 
@@ -917,6 +1127,7 @@ class OrderService {
         .populate('customer', 'customerId businessName contactPersonName phone')
         .populate('createdBy', 'firstName lastName')
         .populate('approvedBy', 'firstName lastName')
+        .populate('driverAssignment.driver', 'firstName lastName phone')
         .sort(sort)
         .skip(skip)
         .limit(parseInt(limit))

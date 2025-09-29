@@ -1,6 +1,6 @@
 const express = require('express');
 const orderController = require('../controllers/order.controller');
-const { authenticate, authorize } = require('../middlewares/auth.middleware');
+const { authenticate, authorize, authorizePermissionOrRole } = require('../middlewares/auth.middleware');
 
 const router = express.Router();
 
@@ -432,6 +432,7 @@ router.put('/:id/status', authenticate, authorize('orders.update'), orderControl
  *         description: Insufficient permissions
  */
 router.put('/:id/approve', authenticate, authorize('orders.approve'), orderController.approveOrder);
+router.patch('/:id/approve', authenticate, authorize('orders.approve'), orderController.approveOrder);
 
 /**
  * @swagger
@@ -472,6 +473,23 @@ router.put('/:id/approve', authenticate, authorize('orders.approve'), orderContr
  *         description: Insufficient permissions
  */
 router.put('/:id/reject', authenticate, authorize('orders.approve'), orderController.rejectOrder);
+router.patch('/:id/reject', authenticate, authorize('orders.approve'), orderController.rejectOrder);
+
+router.patch('/:id/assign-driver', authenticate, authorize('orders.manage'), orderController.assignDriver);
+router.patch('/:id/unassign-driver', authenticate, authorize('orders.manage'), orderController.unassignDriver);
+// Allow Managers/Admins via permission and Drivers by role; service validates assigned driver
+router.patch(
+  '/:id/out-for-delivery',
+  authenticate,
+  authorizePermissionOrRole('orders.manage', ['Manager', 'Admin', 'Super Admin', 'Driver']),
+  orderController.markOutForDelivery
+);
+router.patch(
+  '/:id/record-delivery',
+  authenticate,
+  authorizePermissionOrRole('orders.manage', ['Manager', 'Admin', 'Super Admin', 'Driver']),
+  orderController.recordDelivery
+);
 
 /**
  * @swagger

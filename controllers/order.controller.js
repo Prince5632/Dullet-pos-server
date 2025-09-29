@@ -1,5 +1,22 @@
 const orderService = require('../services/order.service');
 
+const buildErrorResponse = (res, error, defaultStatus = 500) => {
+  const statusCode =
+    error.message === 'Order not found' ? 404 :
+    error.message.startsWith('Only ') ? 403 :
+    error.message.startsWith('Access denied') ? 403 :
+    error.message.startsWith('Order is not in') ? 400 :
+    error.message.startsWith('Order must be') ? 400 :
+    error.message.startsWith('Cannot assign driver') ? 400 :
+    error.message.startsWith('Driver not found') ? 404 :
+    defaultStatus;
+
+  return res.status(statusCode).json({
+    success: false,
+    message: error.message
+  });
+};
+
 // Get all orders controller
 const getAllOrders = async (req, res) => {
   try {
@@ -121,23 +138,7 @@ const approveOrder = async (req, res) => {
     const result = await orderService.approveOrder(req.params.id, req.user.id, notes);
     res.status(200).json(result);
   } catch (error) {
-    if (error.message === 'Order not found') {
-      res.status(404).json({
-        success: false,
-        message: error.message
-      });
-    } else if (error.message === 'Order is not in pending status' || 
-               error.message === 'Only Manager or Admin can approve orders') {
-      res.status(400).json({
-        success: false,
-        message: error.message
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: error.message
-      });
-    }
+    buildErrorResponse(res, error);
   }
 };
 
@@ -148,23 +149,45 @@ const rejectOrder = async (req, res) => {
     const result = await orderService.rejectOrder(req.params.id, req.user.id, notes);
     res.status(200).json(result);
   } catch (error) {
-    if (error.message === 'Order not found') {
-      res.status(404).json({
-        success: false,
-        message: error.message
-      });
-    } else if (error.message === 'Order is not in pending status' || 
-               error.message === 'Only Manager or Admin can reject orders') {
-      res.status(400).json({
-        success: false,
-        message: error.message
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: error.message
-      });
-    }
+    buildErrorResponse(res, error);
+  }
+};
+
+const assignDriver = async (req, res) => {
+  try {
+    const { driverId, notes } = req.body;
+    const result = await orderService.assignDriver(req.params.id, driverId, req.user.id, notes);
+    res.status(200).json(result);
+  } catch (error) {
+    buildErrorResponse(res, error);
+  }
+};
+
+const unassignDriver = async (req, res) => {
+  try {
+    const { notes } = req.body;
+    const result = await orderService.unassignDriver(req.params.id, req.user.id, notes);
+    res.status(200).json(result);
+  } catch (error) {
+    buildErrorResponse(res, error);
+  }
+};
+
+const markOutForDelivery = async (req, res) => {
+  try {
+    const result = await orderService.markOutForDelivery(req.params.id, req.user, req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    buildErrorResponse(res, error);
+  }
+};
+
+const recordDelivery = async (req, res) => {
+  try {
+    const result = await orderService.recordDelivery(req.params.id, req.user, req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    buildErrorResponse(res, error);
   }
 };
 
@@ -376,8 +399,12 @@ module.exports = {
   cancelOrder,
   getOrdersByStatus,
   getCustomerOrderHistory,
-  getOrderStats
-  , getQuickProducts
-  , createQuickOrder
+  getOrderStats,
+  assignDriver,
+  unassignDriver,
+  markOutForDelivery,
+  recordDelivery,
+  getQuickProducts,
+  createQuickOrder
 };
 
