@@ -12,6 +12,7 @@ const roleRoutes = require('./routes/role.routes');
 const customerRoutes = require('./routes/customer.routes');
 const orderRoutes = require('./routes/order.routes');
 const godownRoutes = require('./routes/godown.routes');
+const attendanceRoutes = require('./routes/attendance.routes');
 
 const app = express();
 const Models = require('./models');
@@ -42,6 +43,7 @@ app.use('/api/roles', roleRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/godowns', godownRoutes);
+app.use('/api/attendance', attendanceRoutes);
 
 /**
  * @swagger

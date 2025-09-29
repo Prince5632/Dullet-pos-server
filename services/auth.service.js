@@ -1,4 +1,4 @@
-const { User, UserSession, AuditLog } = require('../models');
+const { User, UserSession, AuditLog, Attendance } = require('../models');
 const { generateToken } = require('../middlewares/auth.middleware');
 const crypto = require('crypto');
 
@@ -98,6 +98,40 @@ const login = async (loginData) => {
         sessionId: userSession._id
       });
 
+      // Auto-mark attendance on first login of the day if face image is provided
+      let attendanceMarked = false;
+      if (faceImage) {
+        try {
+          const hasAttendanceToday = await Attendance.hasAttendanceToday(user._id);
+          
+          if (!hasAttendanceToday) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            const newAttendance = new Attendance({
+              user: user._id,
+              date: today,
+              checkInTime: new Date(),
+              checkInImage: faceImage,
+              godown: user.primaryGodown?._id || null,
+              isAutoMarked: true,
+              markedBy: user._id,
+              createdBy: user._id,
+              ipAddress: ipAddress || 'Unknown',
+              userAgent: userAgent || 'Unknown'
+            });
+            
+            await newAttendance.save();
+            attendanceMarked = true;
+            
+            console.log(`Auto-marked attendance for user ${user.email} on login`);
+          }
+        } catch (attendanceError) {
+          console.error('Failed to auto-mark attendance:', attendanceError.message);
+          // Don't fail login if attendance marking fails
+        }
+      }
+
       // Remove sensitive data from response
       const userResponse = user.toObject();
       delete userResponse.password;
@@ -115,7 +149,8 @@ const login = async (loginData) => {
           session: {
             id: userSession._id,
             loginTime: userSession.loginTime
-          }
+          },
+          attendanceMarked // Indicate if attendance was auto-marked
         }
       };
 

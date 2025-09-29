@@ -65,7 +65,8 @@ roleSchema.statics.seedDefaultRoles = async function() {
         p.action === 'read' || 
         p.action === 'update' || 
         p.action === 'approve' ||
-        (p.module === 'orders' && p.action === 'create')
+        (p.module === 'orders' && p.action === 'create') ||
+        (p.module === 'attendance' && ['create', 'read', 'update', 'manage'].includes(p.action))
       ).map(p => p._id),
       isDefault: true
     },
@@ -76,7 +77,8 @@ roleSchema.statics.seedDefaultRoles = async function() {
         (p.module === 'orders' && ['create', 'read', 'update'].includes(p.action)) ||
         (p.module === 'customers' && ['create', 'read', 'update'].includes(p.action)) ||
         (p.module === 'stock' && p.action === 'read') ||
-        (p.module === 'reports' && p.action === 'read')
+        (p.module === 'reports' && p.action === 'read') ||
+        (p.module === 'attendance' && ['create', 'read'].includes(p.action))
       ).map(p => p._id),
       isDefault: true
     },
@@ -85,7 +87,7 @@ roleSchema.statics.seedDefaultRoles = async function() {
       description: 'Basic staff access',
       permissions: allPermissions.filter(p => 
         p.action === 'read' && 
-        ['orders', 'stock', 'production'].includes(p.module)
+        ['orders', 'stock', 'production', 'attendance'].includes(p.module)
       ).map(p => p._id),
       isDefault: true
     }
