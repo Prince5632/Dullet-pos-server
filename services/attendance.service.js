@@ -439,6 +439,11 @@ class AttendanceService {
       return true;
     }
     
+    // Users can always update their own attendance (for checkout)
+    if (attendance.user._id && attendance.user._id.toString() === user._id.toString()) {
+      return true;
+    }
+    
     if (user.role.name.includes('Manager')) {
       // Manager can update attendance of users in their godowns
       const userGodowns = user.accessibleGodowns?.map(g => g._id || g) || [];
@@ -449,7 +454,7 @@ class AttendanceService {
       return userGodowns.includes(attendance.godown?._id);
     }
     
-    return false; // Sales Executive and Staff cannot update attendance records
+    return false; // Other roles cannot update attendance records of others
   }
 }
 
