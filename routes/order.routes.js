@@ -5,7 +5,7 @@ const { authenticate, authorize, authorizePermissionOrRole } = require('../middl
 
 const router = express.Router();
 
-// Configure multer for widget image upload
+// Configure multer for visit image upload
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
@@ -176,11 +176,11 @@ router.post('/quick', authenticate, authorize('orders.create'), orderController.
 
 /**
  * @swagger
- * /api/orders/widgets:
+ * /api/orders/visits:
  *   get:
- *     summary: Get all widgets
- *     description: Retrieve all widgets with pagination and filtering
- *     tags: [Widget Management]
+ *     summary: Get all visits
+ *     description: Retrieve all visits with pagination and filtering
+ *     tags: [Visit Management]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -195,12 +195,12 @@ router.post('/quick', authenticate, authorize('orders.create'), orderController.
  *         schema:
  *           type: integer
  *           default: 10
- *         description: Number of widgets per page
+ *         description: Number of visits per page
  *       - in: query
  *         name: search
  *         schema:
  *           type: string
- *         description: Search by widget number
+ *         description: Search by visit number
  *       - in: query
  *         name: customerId
  *         schema:
@@ -211,22 +211,22 @@ router.post('/quick', authenticate, authorize('orders.create'), orderController.
  *         schema:
  *           type: string
  *           format: date
- *         description: Filter widgets from this date
+ *         description: Filter visits from this date
  *       - in: query
  *         name: dateTo
  *         schema:
  *           type: string
  *           format: date
- *         description: Filter widgets to this date
+ *         description: Filter visits to this date
  *     responses:
  *       200:
- *         description: Widgets retrieved successfully
+ *         description: Visits retrieved successfully
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Insufficient permissions
  */
-router.get('/widgets', authenticate, authorize('orders.read'), orderController.getWidgets);
+router.get('/visits', authenticate, authorize('orders.read'), orderController.getVisits);
 
 /**
  * @swagger
@@ -987,11 +987,11 @@ router.get('/stats/summary', authenticate, authorize('orders.read'), orderContro
 
 /**
  * @swagger
- * /api/orders/widgets:
+ * /api/orders/visits:
  *   post:
- *     summary: Create new widget
- *     description: Create a new widget with customer, schedule date, notes, image, and location
- *     tags: [Widget Management]
+ *     summary: Create new visit
+ *     description: Create a new visit with customer, schedule date, notes, image, and location
+ *     tags: [Visit Management]
  *     security:
  *       - bearerAuth: []
  *     consumes:
@@ -1014,10 +1014,10 @@ router.get('/stats/summary', authenticate, authorize('orders.read'), orderContro
  *               scheduleDate:
  *                 type: string
  *                 format: date
- *                 description: Scheduled date for the widget
+ *                 description: Scheduled date for the visit
  *               notes:
  *                 type: string
- *                 description: Additional notes for the widget
+ *                 description: Additional notes for the visit
  *               capturedImage:
  *                 type: string
  *                 format: binary
@@ -1027,7 +1027,7 @@ router.get('/stats/summary', authenticate, authorize('orders.read'), orderContro
  *                 description: JSON string containing location data (latitude, longitude, address, timestamp)
  *     responses:
  *       201:
- *         description: Widget created successfully
+ *         description: Visit created successfully
  *       400:
  *         description: Invalid input data
  *       401:
@@ -1035,7 +1035,7 @@ router.get('/stats/summary', authenticate, authorize('orders.read'), orderContro
  *       403:
  *         description: Insufficient permissions
  */
-router.post('/widgets', authenticate, authorize('orders.create'), upload.single('capturedImage'), orderController.createWidget);
+router.post('/visits', authenticate, authorize('orders.create'), upload.single('capturedImage'), orderController.createVisit);
 
 module.exports = router;
 

@@ -1290,9 +1290,9 @@ class OrderService {
     return await this.createOrder(orderPayload, createdBy);
   }
 
-  // Create widget
-  async createWidget(widgetData, createdBy) {
-    const { customer: customerId, notes, scheduleDate, capturedImage, captureLocation } = widgetData;
+  // Create visit
+  async createVisit(visitData, createdBy) {
+    const { customer: customerId, notes, scheduleDate, capturedImage, captureLocation } = visitData;
 
     // Validate customer
     const customer = await Customer.findById(customerId);
@@ -1303,20 +1303,20 @@ class OrderService {
       throw new Error('Customer is inactive');
     }
 
-    // Validate required widget fields
+    // Validate required visit fields
     if (!scheduleDate) {
-      throw new Error('Schedule date is required for widgets');
+      throw new Error('Schedule date is required for visits');
     }
     if (!capturedImage) {
-      throw new Error('Captured image is required for widgets');
+      throw new Error('Captured image is required for visits');
     }
     if (!captureLocation) {
-      throw new Error('Capture location is required for widgets');
+      throw new Error('Capture location is required for visits');
     }
 
-    // Create widget
-    const widget = new Order({
-      type: 'widget',
+    // Create visit
+    const visit = new Order({
+      type: 'visit',  
       customer: customerId,
       notes,
       scheduleDate: new Date(scheduleDate),
@@ -1324,40 +1324,40 @@ class OrderService {
       captureLocation,
       createdBy,
       status: 'pending',
-      items: [], // Widgets don't have items
+      items: [], // Visits don't have items
       subtotal: 0,
       totalAmount: 0
     });
 
     // If no godown explicitly provided, infer from user's primary
-    if (!widget.godown) {
+    if (!visit.godown) {
       try {
         const creator = await require('../models').User.findById(createdBy);
         if (creator?.primaryGodown) {
-          widget.godown = creator.primaryGodown;
+          visit.godown = creator.primaryGodown;
         }
       } catch {}
     }
 
-    await widget.save();
+    await visit.save();
 
     // Log the action
     await AuditLog.create({
       user: createdBy,
       action: 'CREATE',
       module: 'orders',
-      resourceType: 'Widget',
-      resourceId: widget._id.toString(),
-      newValues: widget.toObject(),
-      description: `Created widget: ${widget.orderNumber}`,
+      resourceType: 'Visit',
+      resourceId: visit._id.toString(),
+      newValues: visit.toObject(),
+      description: `Created visit: ${visit.orderNumber}`,
       ipAddress: '0.0.0.0',
       userAgent: 'System'
     });
 
     return {
       success: true,
-      data: { order: widget },
-      message: 'Widget created successfully'
+      data: { order: visit },
+      message: 'Visit created successfully'
     };
   }
 }

@@ -382,17 +382,17 @@ const createQuickOrder = async (req, res) => {
   }
 };
 
-// Create widget controller
-const createWidget = async (req, res) => {
+// Create visit controller
+const createVisit = async (req, res) => {
   try {
-    const widgetData = {
+    const visitData = {
       ...req.body,
-      type: 'widget',
+      type: 'visit',
       capturedImage: req.file ? req.file.buffer.toString('base64') : req.body.capturedImage,
       captureLocation: req.body.captureLocation ? JSON.parse(req.body.captureLocation) : null
     };
     
-    const result = await orderService.createWidget(widgetData, req.user.id);
+    const result = await orderService.createVisit(visitData, req.user.id);
     res.status(201).json(result);
   } catch (error) {
     if (error.message === 'Customer not found' || error.message === 'Customer is inactive') {
@@ -403,10 +403,10 @@ const createWidget = async (req, res) => {
   }
 };
 
-// Get widgets controller
-const getWidgets = async (req, res) => {
+// Get visits controller
+const getVisits = async (req, res) => {
   try {
-    const params = { ...req.query, type: 'widget' };
+    const params = { ...req.query, type: 'visit' };
     const result = await orderService.getAllOrders(params, req.user);
     res.status(200).json(result);
   } catch (error) {
@@ -441,7 +441,7 @@ module.exports = {
   recordDelivery,
   getQuickProducts,
   createQuickOrder,
-  createWidget,
-  getWidgets
+  createVisit,
+  getVisits
 };
 

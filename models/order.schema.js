@@ -39,10 +39,10 @@ const orderItemSchema = new mongoose.Schema({
 });
 
 const orderSchema = new mongoose.Schema({
-  // Type field to distinguish between orders and widgets
+  // Type field to distinguish between orders and visits
   type: {
     type: String,
-    enum: ['order', 'widget'],
+    enum: ['order', 'visit'],   
     default: 'order',
     required: true
   },
@@ -62,7 +62,7 @@ const orderSchema = new mongoose.Schema({
     ref: 'Godown',
     required: false
   },
-  // Order Items (required for orders, not for widgets)
+  // Order Items (required for orders, not for visits)
   items: {
     type: [orderItemSchema],
     required: function() { return this.type === 'order'; },
@@ -77,7 +77,7 @@ const orderSchema = new mongoose.Schema({
       message: 'Orders must have at least one item'
     }
   },
-  // Order Totals (required for orders, not for widgets)
+  // Order Totals (required for orders, not for visits)
   subtotal: {
     type: Number,
     required: function() { return this.type === 'order'; },
@@ -238,27 +238,27 @@ const orderSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  // Widget-specific fields
+  // visit-specific fields
   scheduleDate: {
     type: Date,
-    required: function() { return this.type === 'widget'; }
+    required: function() { return this.type === 'visit'; }
   },
   capturedImage: {
     type: String, // Base64 encoded image
-    required: function() { return this.type === 'widget'; }
+    required: function() { return this.type === 'visit'; }
   },
   captureLocation: {
     latitude: {
       type: Number,
-      required: function() { return this.type === 'widget'; }
+      required: function() { return this.type === 'visit'; }
     },
     longitude: {
       type: Number,
-      required: function() { return this.type === 'widget'; }
+      required: function() { return this.type === 'visit'; }
     },
     address: {
       type: String,
-      required: function() { return this.type === 'widget'; }
+      required: function() { return this.type === 'visit'; }
     },
     timestamp: { type: Date, default: Date.now }
   }
@@ -278,16 +278,16 @@ orderSchema.index({ scheduleDate: 1 });
 
 // Custom validation for type-specific requirements
 orderSchema.pre('validate', function(next) {
-  if (this.type === 'widget') {
-    // Widget-specific validations
+  if (this.type === 'visit') {
+    // visit-specific validations
     if (!this.scheduleDate) {
-      this.invalidate('scheduleDate', 'Schedule date is required for widgets');
+      this.invalidate('scheduleDate', 'Schedule date is required for visits');
     }
     if (!this.capturedImage) {
-      this.invalidate('capturedImage', 'Captured image is required for widgets');
+      this.invalidate('capturedImage', 'Captured image is required for visits');
     }
     if (!this.captureLocation || !this.captureLocation.latitude || !this.captureLocation.longitude) {
-      this.invalidate('captureLocation', 'Capture location (latitude and longitude) is required for widgets');
+      this.invalidate('captureLocation', 'Capture location (latitude and longitude) is required for visits'); 
     }
   } else if (this.type === 'order') {
     // Order-specific validations
@@ -312,10 +312,10 @@ orderSchema.pre('validate', async function(next) {
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const day = String(today.getDate()).padStart(2, '0');
     
-    const prefix = this.type === 'widget' ? 'WDG' : 'ORD';
+    const prefix = this.type === 'visit' ? 'VST' : 'ORD';
     const datePrefix = `${prefix}${year}${month}${day}`;
     
-    // Find the last order/widget number for today of the same type
+    // Find the last order/visit number for today of the same type
     const lastRecord = await this.constructor
       .findOne({ 
         orderNumber: new RegExp(`^${datePrefix}`),
@@ -336,8 +336,8 @@ orderSchema.pre('validate', async function(next) {
 
 // Calculate totals before validation
 orderSchema.pre('validate', function(next) {
-  // Skip calculations for widgets
-  if (this.type === 'widget') {
+  // Skip calculations for visits
+  if (this.type === 'visit') {
     this.subtotal = 0;
     this.totalAmount = 0;
     return next();
