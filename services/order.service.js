@@ -17,6 +17,15 @@ class OrderService {
       sortBy = 'orderDate',
       sortOrder = 'desc',
       type = 'order',
+      // Order-specific filters
+      priority = '',
+      minAmount = '',
+      maxAmount = '',
+      // Visit-specific filters
+      scheduleStatus = '',
+      visitStatus = '',
+      hasImage = '',
+      address = '',
     } = query;
 
     // Build filter object
@@ -42,6 +51,68 @@ class OrderService {
     
     if (type) {
       filter.type = type;
+    }
+
+    // Order-specific filters
+    if (type === 'order') {
+      if (priority) {
+        filter.priority = priority;
+      }
+      
+      if (minAmount || maxAmount) {
+        filter.totalAmount = {};
+        if (minAmount) {
+          filter.totalAmount.$gte = parseFloat(minAmount);
+        }
+        if (maxAmount) {
+          filter.totalAmount.$lte = parseFloat(maxAmount);
+        }
+      }
+    }
+
+    // Visit-specific filters
+    if (type === 'visit') {
+      if (scheduleStatus) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        switch (scheduleStatus) {
+          case 'today':
+            filter.scheduleDate = {
+              $gte: today,
+              $lt: tomorrow
+            };
+            break;
+          case 'upcoming':
+            filter.scheduleDate = { $gte: tomorrow };
+            break;
+          case 'overdue':
+            filter.scheduleDate = { $lt: today };
+            filter.status = { $ne: 'completed' };
+            break;
+        }
+      }
+
+      if (visitStatus) {
+        filter.visitStatus = visitStatus;
+      }
+
+      if (hasImage !== '') {
+        if (hasImage === 'true') {
+          filter.captureLocation = { $exists: true, $ne: null };
+        } else if (hasImage === 'false') {
+          filter.$or = [
+            { captureLocation: { $exists: false } },
+            { captureLocation: null }
+          ];
+        }
+      }
+
+      if (address) {
+        filter['captureLocation.address'] = { $regex: address, $options: 'i' };
+      }
     }
 
     // Date range filter
