@@ -245,20 +245,20 @@ const orderSchema = new mongoose.Schema({
   },
   capturedImage: {
     type: String, // Base64 encoded image
-    required: function() { return this.type === 'visit'; }
+    required: true
   },
   captureLocation: {
     latitude: {
       type: Number,
-      required: function() { return this.type === 'visit'; }
+      required: true
     },
     longitude: {
       type: Number,
-      required: function() { return this.type === 'visit'; }
+      required: true
     },
     address: {
       type: String,
-      required: function() { return this.type === 'visit'; }
+      required: true
     },
     timestamp: { type: Date, default: Date.now }
   }
@@ -267,7 +267,7 @@ const orderSchema = new mongoose.Schema({
 });
 
 // Indexes
-orderSchema.index({ orderNumber: 1 });
+orderSchema.index({ orderNumber: 1 }, { unique: true });
 orderSchema.index({ customer: 1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ orderDate: -1 });
@@ -304,6 +304,14 @@ orderSchema.pre('validate', function(next) {
   next();
 });
 
+// Counter schema for atomic sequence generation
+const counterSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  sequence: { type: Number, default: 0 }
+});
+
+const Counter = mongoose.model('Counter', counterSchema);
+
 // Generate order number before validation
 orderSchema.pre('validate', async function(next) {
   if (this.isNew && !this.orderNumber) {
@@ -314,22 +322,76 @@ orderSchema.pre('validate', async function(next) {
     
     const prefix = this.type === 'visit' ? 'VST' : 'ORD';
     const datePrefix = `${prefix}${year}${month}${day}`;
+    const counterId = `${datePrefix}_${this.type}`;
     
-    // Find the last order/visit number for today of the same type
-    const lastRecord = await this.constructor
-      .findOne({ 
-        orderNumber: new RegExp(`^${datePrefix}`),
-        type: this.type 
-      })
-      .sort({ orderNumber: -1 });
+    let attempts = 0;
+    const maxAttempts = 3;
     
-    let sequence = 1;
-    if (lastRecord) {
-      const lastSequence = parseInt(lastRecord.orderNumber.slice(-3));
-      sequence = lastSequence + 1;
+    while (attempts < maxAttempts) {
+      try {
+        // Check if counter exists, if not, initialize it with existing data
+        let counter = await Counter.findById(counterId);
+        
+        if (!counter) {
+          // Find the highest sequence number for today of this type
+          const lastRecord = await this.constructor
+            .findOne({ 
+              orderNumber: new RegExp(`^${datePrefix}`),
+              type: this.type 
+            })
+            .sort({ orderNumber: -1 });
+          
+          let startSequence = 0;
+          if (lastRecord) {
+            const lastSequence = parseInt(lastRecord.orderNumber.slice(-3));
+            startSequence = lastSequence;
+          }
+          
+          // Initialize counter with the current max sequence
+          counter = await Counter.findOneAndUpdate(
+            { _id: counterId },
+            { $setOnInsert: { sequence: startSequence } },
+            { 
+              new: true, 
+              upsert: true 
+            }
+          );
+        }
+        
+        // Use atomic findOneAndUpdate to get next sequence number
+        counter = await Counter.findOneAndUpdate(
+          { _id: counterId },
+          { $inc: { sequence: 1 } },
+          { new: true }
+        );
+        
+        const sequence = counter.sequence;
+        this.orderNumber = `${datePrefix}${String(sequence).padStart(3, '0')}`;
+        
+        // Verify the generated number doesn't already exist (extra safety check)
+        const existingOrder = await this.constructor.findOne({ 
+          orderNumber: this.orderNumber,
+          type: this.type 
+        });
+        
+        if (!existingOrder) {
+          break; // Success, unique number generated
+        } else {
+          // If somehow the number exists, increment counter and try again
+          attempts++;
+          if (attempts >= maxAttempts) {
+            throw new Error(`Failed to generate unique order number after ${maxAttempts} attempts`);
+          }
+        }
+      } catch (error) {
+        attempts++;
+        if (attempts >= maxAttempts) {
+          return next(new Error(`Failed to generate order number: ${error.message}`));
+        }
+        // Wait a small amount before retrying
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
     }
-    
-    this.orderNumber = `${datePrefix}${String(sequence).padStart(3, '0')}`;
   }
   next();
 });

@@ -172,7 +172,7 @@ router.get('/quick/products', authenticate, authorize('orders.read'), orderContr
  *       403:
  *         description: Insufficient permissions
  */
-router.post('/quick', authenticate, authorize('orders.create'), orderController.createQuickOrder);
+router.post('/quick', authenticate, authorize('orders.create'), upload.single('capturedImage'), orderController.createQuickOrder);
 
 /**
  * @swagger
@@ -437,7 +437,7 @@ router.get('/:id', authenticate, authorize('orders.read'), orderController.getOr
  *       403:
  *         description: Insufficient permissions
  */
-router.post('/', authenticate, authorize('orders.create'), orderController.createOrder);
+router.post('/', authenticate, authorize('orders.create'), upload.single('capturedImage'), orderController.createOrder);
 
 // Summary stats (supports godownId in query)
 router.get('/stats/summary', authenticate, authorize('orders.read'), orderController.getOrderStats);

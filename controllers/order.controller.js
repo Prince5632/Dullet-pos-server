@@ -53,7 +53,14 @@ const getOrderById = async (req, res) => {
 // Create order controller
 const createOrder = async (req, res) => {
   try {
-    const result = await orderService.createOrder(req.body, req.user.id);
+    const orderData = {
+      ...req.body,
+      type: 'order',
+      capturedImage: req.file ? req.file.buffer.toString('base64') : req.body.capturedImage,
+      captureLocation: req.body.captureLocation ? JSON.parse(req.body.captureLocation) : null
+    };
+    
+    const result = await orderService.createOrder(orderData, req.user.id);
     res.status(201).json(result);
   } catch (error) {
     if (error.message === 'Customer not found' || error.message === 'Customer is inactive') {
@@ -369,7 +376,13 @@ const getQuickProducts = async (_req, res) => {
 // Quick-order: create order from quick payload
 const createQuickOrder = async (req, res) => {
   try {
-    const result = await orderService.createQuickOrder(req.body, req.user.id);
+    const quickData = {
+      ...req.body,
+      capturedImage: req.file ? req.file.buffer.toString('base64') : req.body.capturedImage,
+      captureLocation: req.body.captureLocation ? JSON.parse(req.body.captureLocation) : null
+    };
+    
+    const result = await orderService.createQuickOrder(quickData, req.user.id);
     res.status(201).json(result);
   } catch (error) {
     if (error.message === 'Customer not found' || error.message === 'Customer is inactive') {
