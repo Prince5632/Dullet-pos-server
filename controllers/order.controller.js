@@ -417,6 +417,64 @@ const getVisits = async (req, res) => {
   }
 };
 
+// Get visit by ID controller
+const getVisitById = async (req, res) => {
+  try {
+    const result = await orderService.getOrderById(req.params.id);
+    
+    // Verify it's actually a visit
+    if (result.data.order.type !== 'visit') {
+      return res.status(404).json({
+        success: false,
+        message: 'Visit not found'
+      });
+    }
+    
+    res.status(200).json(result);
+  } catch (error) {
+    if (error.message === 'Order not found') {
+      res.status(404).json({
+        success: false,
+        message: 'Visit not found'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+};
+
+// Update visit controller
+const updateVisit = async (req, res) => {
+  try {
+    // First verify it's a visit
+    const existingVisit = await orderService.getOrderById(req.params.id);
+    if (existingVisit.data.order.type !== 'visit') {
+      return res.status(404).json({
+        success: false,
+        message: 'Visit not found'
+      });
+    }
+
+    const result = await orderService.updateOrder(req.params.id, req.body, req.user.id);
+    res.status(200).json(result);
+  } catch (error) {
+    if (error.message === 'Order not found') {
+      res.status(404).json({
+        success: false,
+        message: 'Visit not found'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+};
+
 module.exports = {
   getAllOrders,
   getOrderById,
@@ -442,6 +500,8 @@ module.exports = {
   getQuickProducts,
   createQuickOrder,
   createVisit,
-  getVisits
+  getVisits,
+  getVisitById,
+  updateVisit
 };
 

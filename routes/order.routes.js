@@ -230,6 +230,87 @@ router.get('/visits', authenticate, authorize('orders.read'), orderController.ge
 
 /**
  * @swagger
+ * /api/orders/visits/{id}:
+ *   get:
+ *     summary: Get visit by ID
+ *     description: Retrieve a specific visit by its ID
+ *     tags: [Visit Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Visit ID
+ *     responses:
+ *       200:
+ *         description: Visit retrieved successfully
+ *       404:
+ *         description: Visit not found
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get('/visits/:id', authenticate, authorize('orders.read'), orderController.getVisitById);
+
+/**
+ * @swagger
+ * /api/orders/visits/{id}:
+ *   put:
+ *     summary: Update visit
+ *     description: Update a specific visit by its ID
+ *     tags: [Visit Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Visit ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               customer:
+ *                 type: string
+ *                 description: Customer ID
+ *               scheduleDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Scheduled date for the visit
+ *               notes:
+ *                 type: string
+ *                 description: Additional notes for the visit
+ *               status:
+ *                 type: string
+ *                 enum: [scheduled, in_progress, completed, cancelled]
+ *                 description: Visit status
+ *               visitStatus:
+ *                 type: string
+ *                 enum: [pending, completed, cancelled]
+ *                 description: Visit completion status
+ *     responses:
+ *       200:
+ *         description: Visit updated successfully
+ *       404:
+ *         description: Visit not found
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.put('/visits/:id', authenticate, authorize('orders.update'), orderController.updateVisit);
+
+/**
+ * @swagger
  * /api/orders/{id}:
  *   get:
  *     summary: Get order by ID
