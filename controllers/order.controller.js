@@ -382,6 +382,41 @@ const createQuickOrder = async (req, res) => {
   }
 };
 
+// Create widget controller
+const createWidget = async (req, res) => {
+  try {
+    const widgetData = {
+      ...req.body,
+      type: 'widget',
+      capturedImage: req.file ? req.file.buffer.toString('base64') : req.body.capturedImage,
+      captureLocation: req.body.captureLocation ? JSON.parse(req.body.captureLocation) : null
+    };
+    
+    const result = await orderService.createWidget(widgetData, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    if (error.message === 'Customer not found' || error.message === 'Customer is inactive') {
+      res.status(400).json({ success: false, message: error.message });
+    } else {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+};
+
+// Get widgets controller
+const getWidgets = async (req, res) => {
+  try {
+    const params = { ...req.query, type: 'widget' };
+    const result = await orderService.getAllOrders(params, req.user);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllOrders,
   getOrderById,
@@ -405,6 +440,8 @@ module.exports = {
   markOutForDelivery,
   recordDelivery,
   getQuickProducts,
-  createQuickOrder
+  createQuickOrder,
+  createWidget,
+  getWidgets
 };
 

@@ -15,7 +15,8 @@ class OrderService {
       dateFrom = '',
       dateTo = '',
       sortBy = 'orderDate',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      type = 'order',
     } = query;
 
     // Build filter object
@@ -37,6 +38,10 @@ class OrderService {
     
     if (customerId) {
       filter.customer = customerId;
+    }
+    
+    if (type) {
+      filter.type = type;
     }
 
     // Date range filter
@@ -1283,6 +1288,77 @@ class OrderService {
 
     // Reuse standard creation flow for validations, numbering and auditing
     return await this.createOrder(orderPayload, createdBy);
+  }
+
+  // Create widget
+  async createWidget(widgetData, createdBy) {
+    const { customer: customerId, notes, scheduleDate, capturedImage, captureLocation } = widgetData;
+
+    // Validate customer
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+    if (!customer.isActive) {
+      throw new Error('Customer is inactive');
+    }
+
+    // Validate required widget fields
+    if (!scheduleDate) {
+      throw new Error('Schedule date is required for widgets');
+    }
+    if (!capturedImage) {
+      throw new Error('Captured image is required for widgets');
+    }
+    if (!captureLocation) {
+      throw new Error('Capture location is required for widgets');
+    }
+
+    // Create widget
+    const widget = new Order({
+      type: 'widget',
+      customer: customerId,
+      notes,
+      scheduleDate: new Date(scheduleDate),
+      capturedImage,
+      captureLocation,
+      createdBy,
+      status: 'pending',
+      items: [], // Widgets don't have items
+      subtotal: 0,
+      totalAmount: 0
+    });
+
+    // If no godown explicitly provided, infer from user's primary
+    if (!widget.godown) {
+      try {
+        const creator = await require('../models').User.findById(createdBy);
+        if (creator?.primaryGodown) {
+          widget.godown = creator.primaryGodown;
+        }
+      } catch {}
+    }
+
+    await widget.save();
+
+    // Log the action
+    await AuditLog.create({
+      user: createdBy,
+      action: 'CREATE',
+      module: 'orders',
+      resourceType: 'Widget',
+      resourceId: widget._id.toString(),
+      newValues: widget.toObject(),
+      description: `Created widget: ${widget.orderNumber}`,
+      ipAddress: '0.0.0.0',
+      userAgent: 'System'
+    });
+
+    return {
+      success: true,
+      data: { order: widget },
+      message: 'Widget created successfully'
+    };
   }
 }
 

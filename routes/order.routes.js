@@ -1,8 +1,25 @@
 const express = require('express');
+const multer = require('multer');
 const orderController = require('../controllers/order.controller');
 const { authenticate, authorize, authorizePermissionOrRole } = require('../middlewares/auth.middleware');
 
 const router = express.Router();
+
+// Configure multer for widget image upload
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
 
 /**
  * @swagger
@@ -156,6 +173,60 @@ router.get('/quick/products', authenticate, authorize('orders.read'), orderContr
  *         description: Insufficient permissions
  */
 router.post('/quick', authenticate, authorize('orders.create'), orderController.createQuickOrder);
+
+/**
+ * @swagger
+ * /api/orders/widgets:
+ *   get:
+ *     summary: Get all widgets
+ *     description: Retrieve all widgets with pagination and filtering
+ *     tags: [Widget Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of widgets per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by widget number
+ *       - in: query
+ *         name: customerId
+ *         schema:
+ *           type: string
+ *         description: Filter by customer ID
+ *       - in: query
+ *         name: dateFrom
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter widgets from this date
+ *       - in: query
+ *         name: dateTo
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter widgets to this date
+ *     responses:
+ *       200:
+ *         description: Widgets retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get('/widgets', authenticate, authorize('orders.read'), orderController.getWidgets);
 
 /**
  * @swagger
@@ -911,6 +982,60 @@ router.get('/customer/:customerId/history', authenticate, authorize('orders.read
  *         description: Insufficient permissions
  */
 router.get('/stats/summary', authenticate, authorize('orders.read'), orderController.getOrderStats);
+
+
+
+/**
+ * @swagger
+ * /api/orders/widgets:
+ *   post:
+ *     summary: Create new widget
+ *     description: Create a new widget with customer, schedule date, notes, image, and location
+ *     tags: [Widget Management]
+ *     security:
+ *       - bearerAuth: []
+ *     consumes:
+ *       - multipart/form-data
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - customer
+ *               - scheduleDate
+ *               - capturedImage
+ *               - captureLocation
+ *             properties:
+ *               customer:
+ *                 type: string
+ *                 description: Customer ID
+ *               scheduleDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Scheduled date for the widget
+ *               notes:
+ *                 type: string
+ *                 description: Additional notes for the widget
+ *               capturedImage:
+ *                 type: string
+ *                 format: binary
+ *                 description: Captured image file
+ *               captureLocation:
+ *                 type: string
+ *                 description: JSON string containing location data (latitude, longitude, address, timestamp)
+ *     responses:
+ *       201:
+ *         description: Widget created successfully
+ *       400:
+ *         description: Invalid input data
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.post('/widgets', authenticate, authorize('orders.create'), upload.single('capturedImage'), orderController.createWidget);
 
 module.exports = router;
 

@@ -39,6 +39,13 @@ const orderItemSchema = new mongoose.Schema({
 });
 
 const orderSchema = new mongoose.Schema({
+  // Type field to distinguish between orders and widgets
+  type: {
+    type: String,
+    enum: ['order', 'widget'],
+    default: 'order',
+    required: true
+  },
   orderNumber: {
     type: String,
     unique: true,
@@ -55,12 +62,25 @@ const orderSchema = new mongoose.Schema({
     ref: 'Godown',
     required: false
   },
-  // Order Items
-  items: [orderItemSchema],
-  // Order Totals
+  // Order Items (required for orders, not for widgets)
+  items: {
+    type: [orderItemSchema],
+    required: function() { return this.type === 'order'; },
+    validate: {
+      validator: function(items) {
+        // For orders, must have at least one item
+        if (this.type === 'order') {
+          return items && items.length > 0;
+        }
+        return true;
+      },
+      message: 'Orders must have at least one item'
+    }
+  },
+  // Order Totals (required for orders, not for widgets)
   subtotal: {
     type: Number,
-    required: true,
+    required: function() { return this.type === 'order'; },
     min: 0
   },
   discount: {
@@ -81,7 +101,7 @@ const orderSchema = new mongoose.Schema({
   },
   totalAmount: {
     type: Number,
-    required: true,
+    required: function() { return this.type === 'order'; },
     min: 0
   },
   // Order Status
@@ -160,16 +180,18 @@ const orderSchema = new mongoose.Schema({
       recordedAt: { type: Date, default: Date.now }
     }
   ],
-  // Payment Information
+  // Payment Information (for orders only)
   paymentTerms: {
     type: String,
     enum: ['Cash', 'Credit', 'Advance'],
-    default: 'Cash'
+    default: function() { return this.type === 'order' ? 'Cash' : undefined; },
+    required: function() { return this.type === 'order'; }
   },
   paymentStatus: {
     type: String,
     enum: ['pending', 'partial', 'paid', 'overdue'],
-    default: 'pending'
+    default: function() { return this.type === 'order' ? 'pending' : undefined; },
+    required: function() { return this.type === 'order'; }
   },
   paidAmount: {
     type: Number,
@@ -215,6 +237,30 @@ const orderSchema = new mongoose.Schema({
   internalNotes: {
     type: String,
     default: ''
+  },
+  // Widget-specific fields
+  scheduleDate: {
+    type: Date,
+    required: function() { return this.type === 'widget'; }
+  },
+  capturedImage: {
+    type: String, // Base64 encoded image
+    required: function() { return this.type === 'widget'; }
+  },
+  captureLocation: {
+    latitude: {
+      type: Number,
+      required: function() { return this.type === 'widget'; }
+    },
+    longitude: {
+      type: Number,
+      required: function() { return this.type === 'widget'; }
+    },
+    address: {
+      type: String,
+      required: function() { return this.type === 'widget'; }
+    },
+    timestamp: { type: Date, default: Date.now }
   }
 }, {
   timestamps: true
@@ -227,6 +273,36 @@ orderSchema.index({ status: 1 });
 orderSchema.index({ orderDate: -1 });
 orderSchema.index({ createdBy: 1 });
 orderSchema.index({ paymentStatus: 1 });
+orderSchema.index({ type: 1 });
+orderSchema.index({ scheduleDate: 1 });
+
+// Custom validation for type-specific requirements
+orderSchema.pre('validate', function(next) {
+  if (this.type === 'widget') {
+    // Widget-specific validations
+    if (!this.scheduleDate) {
+      this.invalidate('scheduleDate', 'Schedule date is required for widgets');
+    }
+    if (!this.capturedImage) {
+      this.invalidate('capturedImage', 'Captured image is required for widgets');
+    }
+    if (!this.captureLocation || !this.captureLocation.latitude || !this.captureLocation.longitude) {
+      this.invalidate('captureLocation', 'Capture location (latitude and longitude) is required for widgets');
+    }
+  } else if (this.type === 'order') {
+    // Order-specific validations
+    if (!this.items || this.items.length === 0) {
+      this.invalidate('items', 'At least one item is required for orders');
+    }
+    if (this.subtotal === undefined || this.subtotal === null) {
+      this.invalidate('subtotal', 'Subtotal is required for orders');
+    }
+    if (this.totalAmount === undefined || this.totalAmount === null) {
+      this.invalidate('totalAmount', 'Total amount is required for orders');
+    }
+  }
+  next();
+});
 
 // Generate order number before validation
 orderSchema.pre('validate', async function(next) {
@@ -236,16 +312,20 @@ orderSchema.pre('validate', async function(next) {
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const day = String(today.getDate()).padStart(2, '0');
     
-    const datePrefix = `ORD${year}${month}${day}`;
+    const prefix = this.type === 'widget' ? 'WDG' : 'ORD';
+    const datePrefix = `${prefix}${year}${month}${day}`;
     
-    // Find the last order number for today
-    const lastOrder = await this.constructor
-      .findOne({ orderNumber: new RegExp(`^${datePrefix}`) })
+    // Find the last order/widget number for today of the same type
+    const lastRecord = await this.constructor
+      .findOne({ 
+        orderNumber: new RegExp(`^${datePrefix}`),
+        type: this.type 
+      })
       .sort({ orderNumber: -1 });
     
     let sequence = 1;
-    if (lastOrder) {
-      const lastSequence = parseInt(lastOrder.orderNumber.slice(-3));
+    if (lastRecord) {
+      const lastSequence = parseInt(lastRecord.orderNumber.slice(-3));
       sequence = lastSequence + 1;
     }
     
@@ -256,6 +336,13 @@ orderSchema.pre('validate', async function(next) {
 
 // Calculate totals before validation
 orderSchema.pre('validate', function(next) {
+  // Skip calculations for widgets
+  if (this.type === 'widget') {
+    this.subtotal = 0;
+    this.totalAmount = 0;
+    return next();
+  }
+
   // Ensure each item's totalAmount is set
   if (Array.isArray(this.items)) {
     this.items = this.items.map((item) => {
