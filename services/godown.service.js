@@ -36,13 +36,44 @@ class GodownService {
     return { success: true, data: { godown } };
   }
 
-  async getGodowns(query = {}) {
+  async getGodowns(query = {}, userId = null) {
     const { search = '', city = '', state = '', isActive = '' } = query;
     const filter = {};
+    
+    // Apply basic filters
     if (search) filter.name = { $regex: search, $options: 'i' };
     if (city) filter['location.city'] = city;
     if (state) filter['location.state'] = state;
     if (isActive !== '') filter.isActive = isActive === 'true';
+
+    // Apply user-specific godown access filtering
+    if (userId) {
+      const { User } = require('../models');
+      const user = await User.findById(userId).select('primaryGodown accessibleGodowns').lean();
+      
+      if (user) {
+        const allowedGodownIds = [];
+        
+        // Collect user's primary godown
+        if (user.primaryGodown) {
+          allowedGodownIds.push(user.primaryGodown);
+        }
+        
+        // Collect user's accessible godowns
+        if (user.accessibleGodowns && user.accessibleGodowns.length > 0) {
+          allowedGodownIds.push(...user.accessibleGodowns);
+        }
+        
+        // If user has specific godown assignments, restrict results to those godowns only
+        if (allowedGodownIds.length > 0) {
+          // Remove duplicates and convert to strings for consistent comparison
+          const uniqueGodownIds = [...new Set(allowedGodownIds.map(id => id.toString()))];
+          filter._id = { $in: uniqueGodownIds };
+        }
+        // If user has no godown assignments (primaryGodown and accessibleGodowns are empty),
+        // return all godowns as fallback behavior
+      }
+    }
 
     const godowns = await Godown.find(filter).sort({ name: 1 }).lean();
     return { success: true, data: { godowns } };

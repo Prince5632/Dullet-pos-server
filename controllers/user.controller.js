@@ -3,7 +3,9 @@ const userService = require('../services/user.service');
 // Get all users controller
 const getAllUsers = async (req, res) => {
   try {
-    const result = await userService.getAllUsers(req.query);
+    // Extract user information from token for driver filtering
+    const requestingUserId = req.user._id;
+    const result = await userService.getAllUsers(req.query, requestingUserId);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({

@@ -1,7 +1,7 @@
 const { User, Role, AuditLog } = require('../models');
 
 // Get all users with pagination and filtering
-const getAllUsers = async (queryParams) => {
+const getAllUsers = async (queryParams, requestingUserId = null) => {
   const {
     page = 1,
     limit = 10,
@@ -39,6 +39,60 @@ const getAllUsers = async (queryParams) => {
   // Filter by active status
   if (isActive !== '') {
     query.isActive = isActive === 'true';
+  }
+
+  // Special filtering for drivers based on requesting user's godown access
+  if (role === 'Driver' && requestingUserId) {
+    // Get the requesting user's godown information
+    const requestingUser = await User.findById(requestingUserId)
+      .select('primaryGodown accessibleGodowns')
+      .lean();
+
+    if (requestingUser && (requestingUser.primaryGodown || (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0))) {
+      // Collect all godowns the requesting user has access to
+      const allowedGodowns = [];
+      
+      if (requestingUser.primaryGodown) {
+        allowedGodowns.push(requestingUser.primaryGodown);
+      }
+      
+      if (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0) {
+        allowedGodowns.push(...requestingUser.accessibleGodowns);
+      }
+
+      // Remove duplicates
+      const uniqueGodowns = [...new Set(allowedGodowns.map(id => id.toString()))];
+
+      // Filter drivers to only those with common godowns
+      query.$or = [
+        // Drivers whose primaryGodown matches any of the requesting user's godowns
+        { primaryGodown: { $in: uniqueGodowns } },
+        // Drivers whose accessibleGodowns have at least one common godown
+        { accessibleGodowns: { $in: uniqueGodowns } }
+      ];
+
+      // If there was already a search query, combine it with the godown filter
+      if (search) {
+        query.$and = [
+          {
+            $or: [
+              { firstName: { $regex: search, $options: 'i' } },
+              { lastName: { $regex: search, $options: 'i' } },
+              { email: { $regex: search, $options: 'i' } },
+              { employeeId: { $regex: search, $options: 'i' } }
+            ]
+          },
+          {
+            $or: [
+              { primaryGodown: { $in: uniqueGodowns } },
+              { accessibleGodowns: { $in: uniqueGodowns } }
+            ]
+          }
+        ];
+        // Remove the original $or since we're using $and now
+        delete query.$or;
+      }
+    }
   }
 
   const skip = (parseInt(page) - 1) * parseInt(limit);

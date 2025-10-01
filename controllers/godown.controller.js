@@ -11,7 +11,9 @@ const createGodown = async (req, res) => {
 
 const getGodowns = async (req, res) => {
   try {
-    const result = await godownService.getGodowns(req.query);
+    // Pass user ID from authenticated token to service for godown filtering
+    const userId = req.user ? req.user._id : null;
+    const result = await godownService.getGodowns(req.query, userId);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
