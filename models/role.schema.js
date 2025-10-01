@@ -66,7 +66,8 @@ roleSchema.statics.seedDefaultRoles = async function() {
         p.action === 'update' || 
         p.action === 'approve' ||
         (p.module === 'orders' && ['create', 'manage'].includes(p.action)) ||
-        (p.module === 'attendance' && ['create', 'read', 'update', 'manage'].includes(p.action))
+        (p.module === 'attendance' && ['create', 'read', 'update', 'manage'].includes(p.action)) ||
+        (p.module === 'godowns' && p.action === 'read')
       ).map(p => p._id),
       isDefault: true
     },
@@ -78,7 +79,8 @@ roleSchema.statics.seedDefaultRoles = async function() {
         (p.module === 'customers' && ['create', 'read', 'update'].includes(p.action)) ||
         (p.module === 'stock' && p.action === 'read') ||
         (p.module === 'reports' && p.action === 'read') ||
-        (p.module === 'attendance' && ['create', 'read'].includes(p.action))
+        (p.module === 'attendance' && ['create', 'read'].includes(p.action)) ||
+        (p.module === 'godowns' && p.action === 'read')
       ).map(p => p._id),
       isDefault: true
     },
@@ -87,7 +89,7 @@ roleSchema.statics.seedDefaultRoles = async function() {
       description: 'Basic staff access',
       permissions: allPermissions.filter(p => 
         p.action === 'read' && 
-        ['orders', 'stock', 'production', 'attendance'].includes(p.module)
+        ['orders', 'stock', 'production', 'attendance', 'godowns'].includes(p.module)
       ).map(p => p._id),
       isDefault: true
     },
@@ -96,7 +98,8 @@ roleSchema.statics.seedDefaultRoles = async function() {
       description: 'Delivery driver access',
       permissions: allPermissions.filter(p =>
         (p.module === 'orders' && (p.action === 'read' || p.action === 'update' || p.action === 'manage')) ||
-        (p.module === 'attendance' && ['create', 'read'].includes(p.action))
+        (p.module === 'attendance' && ['create', 'read'].includes(p.action)) ||
+        (p.module === 'godowns' && p.action === 'read')
       ).map(p => p._id),
       isDefault: true
     }

@@ -97,10 +97,8 @@ app.use(errorHandler);
 const startServer = async () => {
   try {
     await connectDB();
-    if (process.env.NODE_ENV !== 'production') {
-      // Seed defaults in non-production for convenience (idempotent)
-      await Models.seedDefaults?.();
-    }
+    // Seed defaults in all environments (idempotent). Ensures permissions/roles stay updated.
+    await Models.seedDefaults?.();
     
     app.listen(PORT, () => {
       console.log(`
