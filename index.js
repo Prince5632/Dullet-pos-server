@@ -17,7 +17,9 @@ const reportRoutes = require('./routes/report.routes');
 
 const app = express();
 const Models = require('./models');
+
 const PORT = process.env.PORT || 5000;
+const HOST = '0.0.0.0'; // <== Binds to all interfaces, needed for EC2
 
 // Middleware
 app.use(cors());
@@ -93,18 +95,16 @@ app.use(notFound);
 // Global error handler
 app.use(errorHandler);
 
-// Connect to database and start server
+// Connect to DB and start server
 const startServer = async () => {
   try {
     await connectDB();
-    // Seed defaults in all environments (idempotent). Ensures permissions/roles stay updated.
     await Models.seedDefaults?.();
 
-    const port= 3000
-    
-    app.listen(port || '0.0.0.0', () => {
+    app.listen(PORT, HOST, () => {
       console.log(`
 🚀 Dullet POS API Server is running!
+📍 Host: ${HOST}
 📍 Port: ${PORT}
 🌍 Environment: ${process.env.NODE_ENV || 'development'}
 📊 Database: Connected to MongoDB
@@ -112,7 +112,7 @@ const startServer = async () => {
       `);
     });
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
 };
