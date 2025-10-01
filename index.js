@@ -99,8 +99,10 @@ const startServer = async () => {
     await connectDB();
     // Seed defaults in all environments (idempotent). Ensures permissions/roles stay updated.
     await Models.seedDefaults?.();
+
+    const port= 3000
     
-    app.listen(PORT, () => {
+    app.listen(port || '0.0.0.0', () => {
       console.log(`
 🚀 Dullet POS API Server is running!
 📍 Port: ${PORT}
