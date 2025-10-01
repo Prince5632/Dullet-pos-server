@@ -1599,6 +1599,23 @@ class OrderService {
       message: "Visit created successfully",
     };
   }
+  // Get order audit trail
+  async getOrderAuditTrail(orderId, limit = 50) {
+    // First check if order exists
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    // Get audit trail for this order
+    const auditTrail = await AuditLog.getResourceAuditTrail('Order', orderId, limit);
+
+    return {
+      success: true,
+      data: auditTrail,
+      message: 'Order audit trail retrieved successfully'
+    };
+  }
 }
 
 module.exports = new OrderService();

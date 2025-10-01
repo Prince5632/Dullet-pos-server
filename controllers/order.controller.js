@@ -488,6 +488,26 @@ const updateVisit = async (req, res) => {
   }
 };
 
+// Get order audit trail controller
+const getOrderAuditTrail = async (req, res) => {
+  try {
+    const result = await orderService.getOrderAuditTrail(req.params.id, req.query.limit);
+    res.status(200).json(result);
+  } catch (error) {
+    if (error.message === 'Order not found') {
+      res.status(404).json({
+        success: false,
+        message: error.message
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+};
+
 module.exports = {
   getAllOrders,
   getOrderById,
@@ -515,6 +535,7 @@ module.exports = {
   createVisit,
   getVisits,
   getVisitById,
-  updateVisit
+  updateVisit,
+  getOrderAuditTrail
 };
 
