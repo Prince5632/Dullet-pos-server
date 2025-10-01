@@ -358,4 +358,63 @@ router.put('/:id/activate', authenticate, authorize('users.update'), userControl
  */
 router.put('/:id/password', authenticate, authorize('users.update'), userController.resetUserPassword);
 
+/**
+ * @swagger
+ * /api/users/{id}/activity:
+ *   get:
+ *     summary: Get user activity trail
+ *     description: Retrieve the activity trail (audit log) for a specific user
+ *     tags: [User Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Maximum number of activity entries to return
+ *     responses:
+ *       200:
+ *         description: User activity trail retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/AuditLog'
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Insufficient permissions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get('/:id/activity', authenticate, authorize('users.read'), userController.getUserAuditTrail);
+
 module.exports = router;

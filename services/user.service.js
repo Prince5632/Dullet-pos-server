@@ -1,14 +1,14 @@
-const { User, Role, AuditLog, UserSession } = require('../models');
+const { User, Role, AuditLog, UserSession } = require("../models");
 
 // Get all users with pagination and filtering
 const getAllUsers = async (queryParams, requestingUserId = null) => {
   const {
     page = 1,
     limit = 10,
-    search = '',
-    department = '',
-    role = '',
-    isActive = ''
+    search = "",
+    department = "",
+    role = "",
+    isActive = "",
   } = queryParams;
 
   const query = {};
@@ -16,10 +16,10 @@ const getAllUsers = async (queryParams, requestingUserId = null) => {
   // Search functionality
   if (search) {
     query.$or = [
-      { firstName: { $regex: search, $options: 'i' } },
-      { lastName: { $regex: search, $options: 'i' } },
-      { email: { $regex: search, $options: 'i' } },
-      { employeeId: { $regex: search, $options: 'i' } }
+      { firstName: { $regex: search, $options: "i" } },
+      { lastName: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+      { employeeId: { $regex: search, $options: "i" } },
     ];
   }
 
@@ -37,38 +37,48 @@ const getAllUsers = async (queryParams, requestingUserId = null) => {
   }
 
   // Filter by active status
-  if (isActive !== '') {
-    query.isActive = isActive === 'true';
+  if (isActive !== "") {
+    query.isActive = isActive === "true";
   }
 
   // Special filtering for drivers based on requesting user's godown access
-  if (role === 'Driver' && requestingUserId) {
+  if (role === "Driver" && requestingUserId) {
     // Get the requesting user's godown information
     const requestingUser = await User.findById(requestingUserId)
-      .select('primaryGodown accessibleGodowns')
+      .select("primaryGodown accessibleGodowns")
       .lean();
 
-    if (requestingUser && (requestingUser.primaryGodown || (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0))) {
+    if (
+      requestingUser &&
+      (requestingUser.primaryGodown ||
+        (requestingUser.accessibleGodowns &&
+          requestingUser.accessibleGodowns.length > 0))
+    ) {
       // Collect all godowns the requesting user has access to
       const allowedGodowns = [];
-      
+
       if (requestingUser.primaryGodown) {
         allowedGodowns.push(requestingUser.primaryGodown);
       }
-      
-      if (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0) {
+
+      if (
+        requestingUser.accessibleGodowns &&
+        requestingUser.accessibleGodowns.length > 0
+      ) {
         allowedGodowns.push(...requestingUser.accessibleGodowns);
       }
 
       // Remove duplicates
-      const uniqueGodowns = [...new Set(allowedGodowns.map(id => id.toString()))];
+      const uniqueGodowns = [
+        ...new Set(allowedGodowns.map((id) => id.toString())),
+      ];
 
       // Filter drivers to only those with common godowns
       query.$or = [
         // Drivers whose primaryGodown matches any of the requesting user's godowns
         { primaryGodown: { $in: uniqueGodowns } },
         // Drivers whose accessibleGodowns have at least one common godown
-        { accessibleGodowns: { $in: uniqueGodowns } }
+        { accessibleGodowns: { $in: uniqueGodowns } },
       ];
 
       // If there was already a search query, combine it with the godown filter
@@ -76,18 +86,18 @@ const getAllUsers = async (queryParams, requestingUserId = null) => {
         query.$and = [
           {
             $or: [
-              { firstName: { $regex: search, $options: 'i' } },
-              { lastName: { $regex: search, $options: 'i' } },
-              { email: { $regex: search, $options: 'i' } },
-              { employeeId: { $regex: search, $options: 'i' } }
-            ]
+              { firstName: { $regex: search, $options: "i" } },
+              { lastName: { $regex: search, $options: "i" } },
+              { email: { $regex: search, $options: "i" } },
+              { employeeId: { $regex: search, $options: "i" } },
+            ],
           },
           {
             $or: [
               { primaryGodown: { $in: uniqueGodowns } },
-              { accessibleGodowns: { $in: uniqueGodowns } }
-            ]
-          }
+              { accessibleGodowns: { $in: uniqueGodowns } },
+            ],
+          },
         ];
         // Remove the original $or since we're using $and now
         delete query.$or;
@@ -98,10 +108,12 @@ const getAllUsers = async (queryParams, requestingUserId = null) => {
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
   const users = await User.find(query)
-    .populate('role', 'name description')
-    .populate('primaryGodown', 'name location')
-    .populate('accessibleGodowns', 'name location')
-    .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil')
+    .populate("role", "name description")
+    .populate("primaryGodown", "name location")
+    .populate("accessibleGodowns", "name location")
+    .select(
+      "-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil"
+    )
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(parseInt(limit));
@@ -118,30 +130,32 @@ const getAllUsers = async (queryParams, requestingUserId = null) => {
         totalPages,
         totalUsers,
         hasNext: parseInt(page) < totalPages,
-        hasPrev: parseInt(page) > 1
-      }
-    }
+        hasPrev: parseInt(page) > 1,
+      },
+    },
   };
 };
 
 // Get user by ID
 const getUserById = async (userId) => {
   const user = await User.findById(userId)
-    .populate('role')
-    .populate('role.permissions')
-    .populate('primaryGodown', 'name location')
-    .populate('accessibleGodowns', 'name location')
-    .populate('createdBy', 'firstName lastName email')
-    .populate('updatedBy', 'firstName lastName email')
-    .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil');
+    .populate("role")
+    .populate("role.permissions")
+    .populate("primaryGodown", "name location")
+    .populate("accessibleGodowns", "name location")
+    .populate("createdBy", "firstName lastName email")
+    .populate("updatedBy", "firstName lastName email")
+    .select(
+      "-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil"
+    );
 
   if (!user) {
-    throw new Error('User not found');
+    throw new Error("User not found");
   }
 
   return {
     success: true,
-    data: { user }
+    data: { user },
   };
 };
 
@@ -158,13 +172,13 @@ const createUser = async (userData, createdBy) => {
     position,
     profilePhoto,
     primaryGodown,
-    accessibleGodowns
+    accessibleGodowns,
   } = userData;
 
   // Check if role exists
   const role = await Role.findById(roleId);
   if (!role || !role.isActive) {
-    throw new Error('Invalid or inactive role');
+    throw new Error("Invalid or inactive role");
   }
 
   // Create user object
@@ -179,9 +193,13 @@ const createUser = async (userData, createdBy) => {
     position: position.trim(),
     profilePhoto: profilePhoto || null,
     primaryGodown: primaryGodown || null,
-    accessibleGodowns: Array.isArray(accessibleGodowns) ? accessibleGodowns : (primaryGodown ? [primaryGodown] : []),
+    accessibleGodowns: Array.isArray(accessibleGodowns)
+      ? accessibleGodowns
+      : primaryGodown
+      ? [primaryGodown]
+      : [],
     createdBy: createdBy,
-    isActive: true
+    isActive: true,
   };
 
   const user = new User(newUserData);
@@ -190,9 +208,9 @@ const createUser = async (userData, createdBy) => {
   // Log user creation
   await AuditLog.logAction({
     user: createdBy,
-    action: 'CREATE',
-    module: 'users',
-    resourceType: 'User',
+    action: "CREATE",
+    module: "users",
+    resourceType: "User",
     resourceId: user._id.toString(),
     description: `Created new user: ${user.fullName} (${user.email})`,
     newValues: {
@@ -202,19 +220,21 @@ const createUser = async (userData, createdBy) => {
       phone: user.phone,
       department: user.department,
       position: user.position,
-      role: role.name
-    }
+      role: role.name,
+    },
   });
 
   // Return user without sensitive data
   const userResponse = await User.findById(user._id)
-    .populate('role', 'name description')
-    .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil');
+    .populate("role", "name description")
+    .select(
+      "-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil"
+    );
 
   return {
     success: true,
-    message: 'User created successfully',
-    data: { user: userResponse }
+    message: "User created successfully",
+    data: { user: userResponse },
   };
 };
 
@@ -223,7 +243,7 @@ const updateUser = async (userId, updateData, updatedBy) => {
   // Find existing user
   const existingUser = await User.findById(userId);
   if (!existingUser) {
-    throw new Error('User not found');
+    throw new Error("User not found");
   }
 
   // Store old values for audit log
@@ -236,7 +256,7 @@ const updateUser = async (userId, updateData, updatedBy) => {
     position: existingUser.position,
     isActive: existingUser.isActive,
     primaryGodown: existingUser.primaryGodown,
-    accessibleGodowns: existingUser.accessibleGodowns
+    accessibleGodowns: existingUser.accessibleGodowns,
   };
 
   // Remove sensitive fields that shouldn't be updated via this route
@@ -250,36 +270,42 @@ const updateUser = async (userId, updateData, updatedBy) => {
   if (updateData.roleId) {
     const role = await Role.findById(updateData.roleId);
     if (!role || !role.isActive) {
-      throw new Error('Invalid or inactive role');
+      throw new Error("Invalid or inactive role");
     }
     updateData.role = updateData.roleId;
     delete updateData.roleId;
   }
 
   // Normalize godown fields if provided
-  if (updateData.primaryGodown === '') delete updateData.primaryGodown;
-  if (updateData.accessibleGodowns && !Array.isArray(updateData.accessibleGodowns)) {
-    updateData.accessibleGodowns = [updateData.accessibleGodowns].filter(Boolean);
+  if (updateData.primaryGodown === "") delete updateData.primaryGodown;
+  if (
+    updateData.accessibleGodowns &&
+    !Array.isArray(updateData.accessibleGodowns)
+  ) {
+    updateData.accessibleGodowns = [updateData.accessibleGodowns].filter(
+      Boolean
+    );
   }
 
   // Add updatedBy field
   updateData.updatedBy = updatedBy;
 
   // Update user
-  const updatedUser = await User.findByIdAndUpdate(
-    userId,
-    updateData,
-    { new: true, runValidators: true }
-  )
-    .populate('role', 'name description')
-    .select('-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil');
+  const updatedUser = await User.findByIdAndUpdate(userId, updateData, {
+    new: true,
+    runValidators: true,
+  })
+    .populate("role", "name description")
+    .select(
+      "-password -passwordResetToken -passwordResetExpires -loginAttempts -lockUntil"
+    );
 
   // Log user update
   await AuditLog.logAction({
     user: updatedBy,
-    action: 'UPDATE',
-    module: 'users',
-    resourceType: 'User',
+    action: "UPDATE",
+    module: "users",
+    resourceType: "User",
     resourceId: userId,
     description: `Updated user: ${updatedUser.fullName} (${updatedUser.email})`,
     oldValues,
@@ -290,14 +316,14 @@ const updateUser = async (userId, updateData, updatedBy) => {
       phone: updatedUser.phone,
       department: updatedUser.department,
       position: updatedUser.position,
-      isActive: updatedUser.isActive
-    }
+      isActive: updatedUser.isActive,
+    },
   });
 
   return {
     success: true,
-    message: 'User updated successfully',
-    data: { user: updatedUser }
+    message: "User updated successfully",
+    data: { user: updatedUser },
   };
 };
 
@@ -305,7 +331,7 @@ const updateUser = async (userId, updateData, updatedBy) => {
 const deleteUser = async (userId, deletedBy) => {
   const user = await User.findById(userId);
   if (!user) {
-    throw new Error('User not found');
+    throw new Error("User not found");
   }
 
   // Soft delete by setting isActive to false
@@ -316,18 +342,18 @@ const deleteUser = async (userId, deletedBy) => {
   // Log user deletion
   await AuditLog.logAction({
     user: deletedBy,
-    action: 'DELETE',
-    module: 'users',
-    resourceType: 'User',
+    action: "DELETE",
+    module: "users",
+    resourceType: "User",
     resourceId: userId,
     description: `Deactivated user: ${user.fullName} (${user.email})`,
     oldValues: { isActive: true },
-    newValues: { isActive: false }
+    newValues: { isActive: false },
   });
 
   return {
     success: true,
-    message: 'User deactivated successfully'
+    message: "User deactivated successfully",
   };
 };
 
@@ -335,7 +361,7 @@ const deleteUser = async (userId, deletedBy) => {
 const reactivateUser = async (userId, reactivatedBy) => {
   const user = await User.findById(userId);
   if (!user) {
-    throw new Error('User not found');
+    throw new Error("User not found");
   }
 
   user.isActive = true;
@@ -345,18 +371,18 @@ const reactivateUser = async (userId, reactivatedBy) => {
   // Log user reactivation
   await AuditLog.logAction({
     user: reactivatedBy,
-    action: 'UPDATE',
-    module: 'users',
-    resourceType: 'User',
+    action: "UPDATE",
+    module: "users",
+    resourceType: "User",
     resourceId: userId,
     description: `Reactivated user: ${user.fullName} (${user.email})`,
     oldValues: { isActive: false },
-    newValues: { isActive: true }
+    newValues: { isActive: true },
   });
 
   return {
     success: true,
-    message: 'User reactivated successfully'
+    message: "User reactivated successfully",
   };
 };
 
@@ -365,12 +391,12 @@ const resetUserPassword = async (userId, newPassword, adminUserId) => {
   // Find the user to update
   const user = await User.findById(userId);
   if (!user) {
-    throw new Error('User not found');
+    throw new Error("User not found");
   }
 
   // Store old values for audit log
   const oldValues = {
-    passwordLastChanged: user.passwordLastChanged
+    passwordLastChanged: user.passwordLastChanged,
   };
 
   // Update password
@@ -381,34 +407,64 @@ const resetUserPassword = async (userId, newPassword, adminUserId) => {
 
   // End all active sessions for the user (force re-login)
   await UserSession.updateMany(
-    { 
-      user: userId, 
-      isActive: true 
+    {
+      user: userId,
+      isActive: true,
     },
-    { 
-      isActive: false, 
+    {
+      isActive: false,
       logoutTime: new Date(),
-      autoLogoutReason: 'password_reset_by_admin'
+      autoLogoutReason: "password_reset_by_admin",
     }
   );
 
   // Log password reset action
   await AuditLog.logAction({
     user: adminUserId,
-    action: 'UPDATE',
-    module: 'users',
-    resourceType: 'User',
+    action: "UPDATE",
+    module: "users",
+    resourceType: "User",
     resourceId: userId,
     description: `Password reset for user: ${user.fullName} (${user.email})`,
     oldValues,
     newValues: {
-      passwordLastChanged: user.passwordLastChanged
-    }
+      passwordLastChanged: user.passwordLastChanged,
+    },
   });
 
   return {
     success: true,
-    message: 'Password reset successfully. User will need to login again.'
+    message: "Password reset successfully. User will need to login again.",
+  };
+};
+
+// Get user audit trail
+const getUserAuditTrail = async (userId, page = 1, limit = 20) => {
+  // Check if user exists
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  // Calculate skip value for pagination
+  const skip = (page - 1) * limit;
+
+  // Get audit trail for this user with pagination
+  const result = await AuditLog.getUserActivityLog(userId, { limit, skip });
+
+  return {
+    success: true,
+    message: "User audit trail retrieved successfully",
+    data: {
+      activities: result.logs,
+      pagination: {
+        currentPage: page,
+        totalItems: result.total,
+        itemsPerPage: limit,
+        totalPages: Math.ceil(result.total / limit),
+        hasMore: result.hasMore
+      }
+    }
   };
 };
 
@@ -419,5 +475,6 @@ module.exports = {
   updateUser,
   deleteUser,
   reactivateUser,
-  resetUserPassword
+  resetUserPassword,
+  getUserAuditTrail,
 };

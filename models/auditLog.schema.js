@@ -103,21 +103,57 @@ auditLogSchema.statics.logAction = async function(logData) {
 };
 
 // Static method to get audit trail for a resource
-auditLogSchema.statics.getResourceAuditTrail = async function(resourceType, resourceId, limit = 50) {
-  return await this.find({
+auditLogSchema.statics.getResourceAuditTrail = async function(resourceType, resourceId, options = {}) {
+  const { limit = 50, skip = 0 } = options;
+  
+  const query = this.find({
     resourceType,
     resourceId
   })
   .populate('user', 'firstName lastName email employeeId')
-  .sort({ createdAt: -1 })
-  .limit(limit);
+  .sort({ createdAt: -1 });
+
+  if (limit > 0) {
+    query.limit(limit);
+  }
+  
+  if (skip > 0) {
+    query.skip(skip);
+  }
+
+  const logs = await query;
+  const total = await this.countDocuments({ resourceType, resourceId });
+  
+  return {
+    logs,
+    total,
+    hasMore: skip + logs.length < total
+  };
 };
 
 // Static method to get user activity log
-auditLogSchema.statics.getUserActivityLog = async function(userId, limit = 100) {
-  return await this.find({ user: userId })
-    .sort({ createdAt: -1 })
-    .limit(limit);
+auditLogSchema.statics.getUserActivityLog = async function(userId, options = {}) {
+  const { limit = 100, skip = 0 } = options;
+  
+  const query = this.find({ user: userId })
+    .sort({ createdAt: -1 });
+
+  if (limit > 0) {
+    query.limit(limit);
+  }
+  
+  if (skip > 0) {
+    query.skip(skip);
+  }
+
+  const logs = await query;
+  const total = await this.countDocuments({ user: userId });
+  
+  return {
+    logs,
+    total,
+    hasMore: skip + logs.length < total
+  };
 };
 
 module.exports = mongoose.model('AuditLog', auditLogSchema);

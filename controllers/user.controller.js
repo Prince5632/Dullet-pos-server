@@ -219,6 +219,33 @@ const resetUserPassword = async (req, res) => {
   }
 };
 
+// Get user audit trail controller
+const getUserAuditTrail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    
+    // Validate pagination parameters
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit))); // Max 50 items per page
+    
+    const result = await userService.getUserAuditTrail(id, pageNum, limitNum);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error getting user audit trail:', error);
+    if (error.message === 'User not found') {
+      return res.status(404).json({
+        success: false,
+        message: error.message
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to get user audit trail'
+    });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
@@ -226,5 +253,6 @@ module.exports = {
   updateUser,
   deleteUser,
   reactivateUser,
-  resetUserPassword
+  resetUserPassword,
+  getUserAuditTrail
 };

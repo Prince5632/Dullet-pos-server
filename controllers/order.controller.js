@@ -491,9 +491,18 @@ const updateVisit = async (req, res) => {
 // Get order audit trail controller
 const getOrderAuditTrail = async (req, res) => {
   try {
-    const result = await orderService.getOrderAuditTrail(req.params.id, req.query.limit);
+    const { id } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    
+    // Validate pagination parameters
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit))); // Max 50 items per page
+    
+    const result = await orderService.getOrderAuditTrail(id, pageNum, limitNum);
+    
     res.status(200).json(result);
   } catch (error) {
+    console.error('Error getting order audit trail:', error);
     if (error.message === 'Order not found') {
       res.status(404).json({
         success: false,
@@ -502,7 +511,7 @@ const getOrderAuditTrail = async (req, res) => {
     } else {
       res.status(500).json({
         success: false,
-        message: error.message
+        message: error.message || 'Failed to get order audit trail'
       });
     }
   }
