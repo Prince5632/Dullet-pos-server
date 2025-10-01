@@ -492,28 +492,42 @@ const updateVisit = async (req, res) => {
 const getOrderAuditTrail = async (req, res) => {
   try {
     const { id } = req.params;
-    const { page = 1, limit = 20 } = req.query;
-    
-    // Validate pagination parameters
-    const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(50, Math.max(1, parseInt(limit))); // Max 50 items per page
-    
-    const result = await orderService.getOrderAuditTrail(id, pageNum, limitNum);
-    
-    res.status(200).json(result);
+    const { page = 1, limit = 10 } = req.query;
+
+    const result = await orderService.getOrderAuditTrail(id, {
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Order audit trail retrieved successfully',
+      data: result
+    });
   } catch (error) {
     console.error('Error getting order audit trail:', error);
-    if (error.message === 'Order not found') {
-      res.status(404).json({
-        success: false,
-        message: error.message
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Failed to get order audit trail'
-      });
-    }
+    buildErrorResponse(res, error);
+  }
+};
+
+const getVisitAuditTrail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    const result = await orderService.getVisitAuditTrail(id, {
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Visit audit trail retrieved successfully',
+      data: result
+    });
+  } catch (error) {
+    console.error('Error getting visit audit trail:', error);
+    buildErrorResponse(res, error);
   }
 };
 
@@ -545,6 +559,7 @@ module.exports = {
   getVisits,
   getVisitById,
   updateVisit,
-  getOrderAuditTrail
+  getOrderAuditTrail,
+  getVisitAuditTrail
 };
 

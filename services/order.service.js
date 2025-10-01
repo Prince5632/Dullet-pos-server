@@ -332,8 +332,12 @@ class OrderService {
     await order.save();
 
     // Log the action
+    // Determine resource type based on order type
+    const resourceType = order.type === "visit" ? "Visit" : "Order";
+    const resourceName = order.type === "visit" ? "visit" : "order";
+    
     // Build a richer description when payment fields changed
-    let description = `Updated order: ${order.orderNumber}`;
+    let description = `Updated ${resourceName}: ${order.orderNumber}`;
     const changes = [];
     if (
       typeof updateData.paidAmount === "number" &&
@@ -359,7 +363,7 @@ class OrderService {
       user: updatedBy,
       action: "UPDATE",
       module: "orders",
-      resourceType: "Order",
+      resourceType: resourceType,
       resourceId: order._id.toString(),
       oldValues,
       newValues: order.toObject(),
@@ -1616,6 +1620,41 @@ class OrderService {
     return {
       success: true,
       message: 'Order audit trail retrieved successfully',
+      data: {
+        activities: result.logs,
+        pagination: {
+          currentPage: page,
+          totalItems: result.total,
+          itemsPerPage: limit,
+          totalPages: Math.ceil(result.total / limit),
+          hasMore: result.hasMore
+        }
+      }
+    };
+  }
+
+  async getVisitAuditTrail(visitId, options = {}) {
+    const { page = 1, limit = 10 } = options;
+    
+    // First check if visit exists and is of type 'visit'
+    const visit = await Order.findById(visitId);
+    if (!visit) {
+      throw new Error('Visit not found');
+    }
+    
+    if (visit.type !== 'visit') {
+      throw new Error('Invalid resource type - not a visit');
+    }
+
+    // Calculate skip value for pagination
+    const skip = (page - 1) * limit;
+
+    // Get audit trail for this visit with pagination
+    const result = await AuditLog.getResourceAuditTrail('Visit', visitId, { limit, skip });
+
+    return {
+      success: true,
+      message: 'Visit audit trail retrieved successfully',
       data: {
         activities: result.logs,
         pagination: {

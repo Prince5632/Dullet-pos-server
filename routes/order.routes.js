@@ -311,6 +311,46 @@ router.put('/visits/:id', authenticate, authorize('orders.update'), orderControl
 
 /**
  * @swagger
+ * /api/orders/visits/{id}/audit-trail:
+ *   get:
+ *     summary: Get visit audit trail
+ *     description: Retrieve the audit trail for a specific visit
+ *     tags: [Order Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Visit ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of audit entries per page
+ *     responses:
+ *       200:
+ *         description: Visit audit trail retrieved successfully
+ *       404:
+ *         description: Visit not found
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get('/visits/:id/audit-trail', authenticate, authorize('orders.read'), orderController.getVisitAuditTrail);
+
+/**
+ * @swagger
  * /api/orders/{id}:
  *   get:
  *     summary: Get order by ID
