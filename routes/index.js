@@ -3,11 +3,13 @@ const userRoutes = require('./user.routes');
 const roleRoutes = require('./role.routes');
 const customerRoutes = require('./customer.routes');
 const orderRoutes = require('./order.routes');
+const reportRoutes = require('./report.routes');
 
 module.exports = {
   authRoutes,
   userRoutes,
   roleRoutes,
   customerRoutes,
-  orderRoutes
+  orderRoutes,
+  reportRoutes
 };

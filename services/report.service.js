@@ -1,0 +1,780 @@
+const User = require('../models/user.schema');
+const Customer = require('../models/customer.schema');
+const Order = require('../models/order.schema');
+const mongoose = require('mongoose');
+
+/**
+ * Get Sales Executive Reports
+ */
+exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue', sortOrder = 'desc') => {
+  try {
+    const { dateRange, userId, department, godownId } = filters;
+
+    // Build match criteria
+    const matchCriteria = { type: 'order', status: { $nin: ['cancelled', 'rejected'] } };
+    
+    if (dateRange && dateRange.startDate && dateRange.endDate) {
+      matchCriteria.orderDate = {
+        $gte: dateRange.startDate,
+        $lte: dateRange.endDate
+      };
+    }
+
+    if (userId) {
+      matchCriteria.createdBy = new mongoose.Types.ObjectId(userId);
+    }
+
+    // Aggregate orders by sales executive
+    const reports = await Order.aggregate([
+      { $match: matchCriteria },
+      // Optional godown filter at order level
+      ...(godownId ? [{ $match: { godown: new mongoose.Types.ObjectId(godownId) } }] : []),
+      {
+        $group: {
+          _id: '$createdBy',
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: '$totalAmount' },
+          totalPaidAmount: { $sum: '$paidAmount' },
+          avgOrderValue: { $avg: '$totalAmount' },
+          pendingOrders: {
+            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
+          },
+          approvedOrders: {
+            $sum: { $cond: [{ $eq: ['$status', 'approved'] }, 1, 0] }
+          },
+          deliveredOrders: {
+            $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] }
+          },
+          completedOrders: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          },
+          uniqueCustomers: { $addToSet: '$customer' }
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'executiveInfo'
+        }
+      },
+      {
+        $unwind: '$executiveInfo'
+      },
+      // Filter by department if provided (default handled in controller)
+      ...(department ? [{ $match: { 'executiveInfo.department': department } }] : []),
+      {
+        $lookup: {
+          from: 'roles',
+          localField: 'executiveInfo.role',
+          foreignField: '_id',
+          as: 'roleInfo'
+        }
+      },
+      {
+        $unwind: { path: '$roleInfo', preserveNullAndEmptyArrays: true }
+      },
+      {
+        $project: {
+          _id: 1,
+          executiveName: {
+            $concat: ['$executiveInfo.firstName', ' ', '$executiveInfo.lastName']
+          },
+          employeeId: '$executiveInfo.employeeId',
+          email: '$executiveInfo.email',
+          phone: '$executiveInfo.phone',
+          department: '$executiveInfo.department',
+          position: '$executiveInfo.position',
+          roleName: '$roleInfo.name',
+          totalOrders: 1,
+          totalRevenue: { $round: ['$totalRevenue', 2] },
+          totalPaidAmount: { $round: ['$totalPaidAmount', 2] },
+          totalOutstanding: {
+            $round: [{ $subtract: ['$totalRevenue', '$totalPaidAmount'] }, 2]
+          },
+          avgOrderValue: { $round: ['$avgOrderValue', 2] },
+          pendingOrders: 1,
+          approvedOrders: 1,
+          deliveredOrders: 1,
+          completedOrders: 1,
+          uniqueCustomersCount: { $size: '$uniqueCustomers' },
+          conversionRate: {
+            $round: [
+              {
+                $multiply: [
+                  {
+                    $cond: [
+                      { $eq: ['$totalOrders', 0] },
+                      0,
+                      { $divide: ['$completedOrders', '$totalOrders'] }
+                    ]
+                  },
+                  100
+                ]
+              },
+              2
+            ]
+          }
+        }
+      },
+      {
+        $sort: { [sortBy]: sortOrder === 'desc' ? -1 : 1 }
+      }
+    ]);
+
+    // Calculate summary statistics
+    const summary = {
+      totalExecutives: reports.length,
+      totalOrdersAll: reports.reduce((sum, r) => sum + r.totalOrders, 0),
+      totalRevenueAll: reports.reduce((sum, r) => sum + r.totalRevenue, 0),
+      totalOutstandingAll: reports.reduce((sum, r) => sum + r.totalOutstanding, 0),
+      avgOrderValueAll: reports.length > 0 
+        ? reports.reduce((sum, r) => sum + r.avgOrderValue, 0) / reports.length 
+        : 0
+    };
+
+    return {
+      summary,
+      reports,
+      dateRange: dateRange || null
+    };
+  } catch (error) {
+    throw new Error(`Failed to generate sales executive reports: ${error.message}`);
+  }
+};
+
+/**
+ * Get Godown-wise Sales Reports
+ */
+exports.getGodownSalesReports = async (filters = {}, sortBy = 'totalRevenue', sortOrder = 'desc') => {
+  try {
+    const { dateRange } = filters;
+
+    const matchCriteria = { type: 'order', status: { $nin: ['cancelled', 'rejected'] } };
+
+    if (dateRange && dateRange.startDate && dateRange.endDate) {
+      matchCriteria.orderDate = {
+        $gte: dateRange.startDate,
+        $lte: dateRange.endDate
+      };
+    }
+
+    const reports = await Order.aggregate([
+      { $match: matchCriteria },
+      {
+        $group: {
+          _id: '$godown',
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: '$totalAmount' },
+          totalPaid: { $sum: '$paidAmount' },
+          avgOrderValue: { $avg: '$totalAmount' }
+        }
+      },
+      {
+        $lookup: {
+          from: 'godowns',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'godownInfo'
+        }
+      },
+      { $unwind: { path: '$godownInfo', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 1,
+          godownName: '$godownInfo.name',
+          location: '$godownInfo.location',
+          totalOrders: 1,
+          totalRevenue: { $round: ['$totalRevenue', 2] },
+          totalPaid: { $round: ['$totalPaid', 2] },
+          totalOutstanding: { $round: [{ $subtract: ['$totalRevenue', '$totalPaid'] }, 2] },
+          avgOrderValue: { $round: ['$avgOrderValue', 2] }
+        }
+      },
+      { $sort: { [sortBy]: sortOrder === 'desc' ? -1 : 1 } }
+    ]);
+
+    const summary = {
+      totalGodowns: reports.length,
+      totalOrdersAll: reports.reduce((s, r) => s + r.totalOrders, 0),
+      totalRevenueAll: reports.reduce((s, r) => s + r.totalRevenue, 0),
+      totalOutstandingAll: reports.reduce((s, r) => s + r.totalOutstanding, 0),
+      avgOrderValueAll: reports.length ? reports.reduce((s, r) => s + r.avgOrderValue, 0) / reports.length : 0
+    };
+
+    return { summary, reports, dateRange: dateRange || null };
+  } catch (error) {
+    throw new Error(`Failed to generate godown sales reports: ${error.message}`);
+  }
+};
+
+/**
+ * Get Customer Reports
+ */
+exports.getCustomerReports = async (filters = {}, sortBy = 'totalSpent', sortOrder = 'desc') => {
+  try {
+    const { dateRange, customerId, inactiveDays } = filters;
+
+    // Build match criteria
+    const matchCriteria = { type: 'order', status: { $nin: ['cancelled', 'rejected'] } };
+    
+    if (dateRange && dateRange.startDate && dateRange.endDate) {
+      matchCriteria.orderDate = {
+        $gte: dateRange.startDate,
+        $lte: dateRange.endDate
+      };
+    }
+
+    if (customerId) {
+      matchCriteria.customer = new mongoose.Types.ObjectId(customerId);
+    }
+
+    // Aggregate orders by customer
+    const reports = await Order.aggregate([
+      { $match: matchCriteria },
+      {
+        $group: {
+          _id: '$customer',
+          totalOrders: { $sum: 1 },
+          totalSpent: { $sum: '$totalAmount' },
+          totalPaid: { $sum: '$paidAmount' },
+          avgOrderValue: { $avg: '$totalAmount' },
+          lastOrderDate: { $max: '$orderDate' },
+          firstOrderDate: { $min: '$orderDate' },
+          pendingOrders: {
+            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
+          },
+          completedOrders: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          },
+          orderStatuses: { $push: '$status' }
+        }
+      },
+      {
+        $lookup: {
+          from: 'customers',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'customerInfo'
+        }
+      },
+      {
+        $unwind: '$customerInfo'
+      },
+      {
+        $project: {
+          _id: 1,
+          customerId: '$customerInfo.customerId',
+          businessName: '$customerInfo.businessName',
+          contactPerson: '$customerInfo.contactPersonName',
+          phone: '$customerInfo.phone',
+          email: '$customerInfo.email',
+          customerType: '$customerInfo.customerType',
+          city: '$customerInfo.address.city',
+          state: '$customerInfo.address.state',
+          isActive: '$customerInfo.isActive',
+          creditLimit: '$customerInfo.creditLimit',
+          outstandingAmount: '$customerInfo.outstandingAmount',
+          totalOrders: 1,
+          totalSpent: { $round: ['$totalSpent', 2] },
+          totalPaid: { $round: ['$totalPaid', 2] },
+          totalOutstanding: {
+            $round: [{ $subtract: ['$totalSpent', '$totalPaid'] }, 2]
+          },
+          avgOrderValue: { $round: ['$avgOrderValue', 2] },
+          lastOrderDate: 1,
+          firstOrderDate: 1,
+          daysSinceLastOrder: {
+            $round: [
+              {
+                $divide: [
+                  { $subtract: [new Date(), '$lastOrderDate'] },
+                  1000 * 60 * 60 * 24
+                ]
+              },
+              0
+            ]
+          },
+          pendingOrders: 1,
+          completedOrders: 1,
+          lifetimeValue: { $round: ['$totalSpent', 2] }
+        }
+      },
+      {
+        $sort: { [sortBy]: sortOrder === 'desc' ? -1 : 1 }
+      }
+    ]);
+
+    // Filter inactive customers if requested
+    let inactiveCustomers = [];
+    if (inactiveDays) {
+      inactiveCustomers = reports.filter(r => r.daysSinceLastOrder >= inactiveDays);
+    }
+
+    // Calculate summary statistics
+    const summary = {
+      totalCustomers: reports.length,
+      activeCustomers: reports.filter(r => r.daysSinceLastOrder <= 30).length,
+      inactiveCustomers: inactiveDays ? inactiveCustomers.length : 0,
+      totalRevenueAll: reports.reduce((sum, r) => sum + r.totalSpent, 0),
+      totalOutstandingAll: reports.reduce((sum, r) => sum + r.totalOutstanding, 0),
+      avgCustomerValue: reports.length > 0 
+        ? reports.reduce((sum, r) => sum + r.lifetimeValue, 0) / reports.length 
+        : 0
+    };
+
+    return {
+      summary,
+      reports: inactiveDays ? inactiveCustomers : reports,
+      dateRange: dateRange || null,
+      filters: { inactiveDays }
+    };
+  } catch (error) {
+    throw new Error(`Failed to generate customer reports: ${error.message}`);
+  }
+};
+
+/**
+ * Get Inactive Customers
+ */
+exports.getInactiveCustomers = async (days = 7) => {
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+
+    const customers = await Customer.find({ isActive: true });
+    
+    const inactiveCustomers = [];
+
+    for (const customer of customers) {
+      const lastOrder = await Order.findOne({
+        customer: customer._id,
+        type: 'order',
+        status: { $nin: ['cancelled', 'rejected'] }
+      })
+      .sort({ orderDate: -1 })
+      .select('orderDate orderNumber totalAmount');
+
+      if (!lastOrder || lastOrder.orderDate < cutoffDate) {
+        const daysSinceLastOrder = lastOrder
+          ? Math.floor((new Date() - lastOrder.orderDate) / (1000 * 60 * 60 * 24))
+          : null;
+
+        inactiveCustomers.push({
+          _id: customer._id,
+          customerId: customer.customerId,
+          businessName: customer.businessName,
+          contactPerson: customer.contactPersonName,
+          phone: customer.phone,
+          email: customer.email,
+          customerType: customer.customerType,
+          city: customer.address.city,
+          state: customer.address.state,
+          lastOrderDate: lastOrder?.orderDate || null,
+          lastOrderNumber: lastOrder?.orderNumber || null,
+          lastOrderAmount: lastOrder?.totalAmount || 0,
+          daysSinceLastOrder,
+          totalOrders: customer.totalOrders,
+          totalOrderValue: customer.totalOrderValue,
+          outstandingAmount: customer.outstandingAmount
+        });
+      }
+    }
+
+    // Sort by days since last order (descending)
+    inactiveCustomers.sort((a, b) => {
+      if (a.daysSinceLastOrder === null) return 1;
+      if (b.daysSinceLastOrder === null) return -1;
+      return b.daysSinceLastOrder - a.daysSinceLastOrder;
+    });
+
+    return {
+      days,
+      count: inactiveCustomers.length,
+      customers: inactiveCustomers
+    };
+  } catch (error) {
+    throw new Error(`Failed to get inactive customers: ${error.message}`);
+  }
+};
+
+/**
+ * Get Executive Performance Detail
+ */
+exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
+  try {
+    const { dateRange } = filters;
+
+    // Get user info
+    const user = await User.findById(userId)
+      .populate('role')
+      .select('-password');
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Build match criteria
+    const matchCriteria = { 
+      createdBy: new mongoose.Types.ObjectId(userId),
+      type: 'order',
+      status: { $nin: ['cancelled', 'rejected'] }
+    };
+    
+    if (dateRange && dateRange.startDate && dateRange.endDate) {
+      matchCriteria.orderDate = {
+        $gte: dateRange.startDate,
+        $lte: dateRange.endDate
+      };
+    }
+
+    // Get orders
+    const orders = await Order.find(matchCriteria)
+      .populate('customer', 'businessName customerId phone city')
+      .sort({ orderDate: -1 })
+      .limit(100);
+
+    // Enrich recent orders with attaKg (normalized KG for atta items)
+    const attaNameRegex = /(atta|aata|wheat|flour|maida)/i;
+    const recentOrders = orders.map((doc) => {
+      const order = doc.toObject();
+      const items = Array.isArray(order.items) ? order.items : [];
+      let totalKg = 0;
+      for (const item of items) {
+        const name = (item?.productName || '').toString();
+        if (!attaNameRegex.test(name)) continue;
+        const unit = item?.unit;
+        const quantity = Number(item?.quantity || 0);
+        let kg = 0;
+        if (unit === 'KG') kg = quantity;
+        else if (unit === 'Quintal') kg = quantity * 100;
+        else if (unit === 'Ton') kg = quantity * 1000;
+        else if (unit === 'Bags') {
+          const pack = item?.packaging;
+          let bagKg = pack === '5kg Bags' ? 5
+            : pack === '10kg Bags' ? 10
+            : pack === '25kg Bags' ? 25
+            : pack === '50kg Bags' ? 50
+            : 0;
+          if (!bagKg && typeof pack === 'string') {
+            const m = pack.match(/(\d+)\s*kg/i);
+            if (m) bagKg = Number(m[1]);
+          }
+          kg = quantity * bagKg;
+        }
+        totalKg += kg;
+      }
+      order.attaKg = Number(totalKg.toFixed(2));
+      return order;
+    });
+
+    // Get performance metrics
+    const metrics = await Order.aggregate([
+      { $match: matchCriteria },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: '$totalAmount' },
+          totalPaid: { $sum: '$paidAmount' },
+          avgOrderValue: { $avg: '$totalAmount' },
+          maxOrderValue: { $max: '$totalAmount' },
+          minOrderValue: { $min: '$totalAmount' }
+        }
+      }
+    ]);
+
+    // Get monthly trend
+    const monthlyTrend = await Order.aggregate([
+      { $match: matchCriteria },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$orderDate' },
+            month: { $month: '$orderDate' }
+          },
+          orders: { $sum: 1 },
+          revenue: { $sum: '$totalAmount' }
+        }
+      },
+      { $sort: { '_id.year': -1, '_id.month': -1 } },
+      { $limit: 12 }
+    ]);
+
+    // Get top customers
+    const topCustomers = await Order.aggregate([
+      { $match: matchCriteria },
+      {
+        $group: {
+          _id: '$customer',
+          totalOrders: { $sum: 1 },
+          totalSpent: { $sum: '$totalAmount' }
+        }
+      },
+      { $sort: { totalSpent: -1 } },
+      { $limit: 10 },
+      {
+        $lookup: {
+          from: 'customers',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'customerInfo'
+        }
+      },
+      { $unwind: '$customerInfo' }
+    ]);
+
+    // Compute Aata (Atta/Wheat Flour) sales stats (normalize to KG)
+    const attaMatchRegex = /(atta|aata|wheat|flour|maida)/i;
+    const attaTotalsAgg = await Order.aggregate([
+      { $match: matchCriteria },
+      { $unwind: '$items' },
+      { $match: { 'items.productName': { $regex: attaMatchRegex } } },
+      {
+        $addFields: {
+          itemKg: {
+            $switch: {
+              branches: [
+                { case: { $eq: ['$items.unit', 'KG'] }, then: '$items.quantity' },
+                { case: { $eq: ['$items.unit', 'Quintal'] }, then: { $multiply: ['$items.quantity', 100] } },
+                { case: { $eq: ['$items.unit', 'Ton'] }, then: { $multiply: ['$items.quantity', 1000] } },
+                { 
+                  case: { $eq: ['$items.unit', 'Bags'] }, 
+                  then: {
+                    $multiply: [
+                      '$items.quantity',
+                      {
+                        $switch: {
+                          branches: [
+                            { case: { $eq: ['$items.packaging', '5kg Bags'] }, then: 5 },
+                            { case: { $eq: ['$items.packaging', '10kg Bags'] }, then: 10 },
+                            { case: { $eq: ['$items.packaging', '25kg Bags'] }, then: 25 },
+                            { case: { $eq: ['$items.packaging', '50kg Bags'] }, then: 50 },
+                          ],
+                          default: 0
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              default: '$items.quantity'
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalKg: { $sum: '$itemKg' },
+          totalAmount: { $sum: '$items.totalAmount' }
+        }
+      }
+    ]);
+
+    const attaByGrade = await Order.aggregate([
+      { $match: matchCriteria },
+      { $unwind: '$items' },
+      { $match: { 'items.productName': { $regex: attaMatchRegex } } },
+      {
+        $addFields: {
+          itemKg: {
+            $switch: {
+              branches: [
+                { case: { $eq: ['$items.unit', 'KG'] }, then: '$items.quantity' },
+                { case: { $eq: ['$items.unit', 'Quintal'] }, then: { $multiply: ['$items.quantity', 100] } },
+                { case: { $eq: ['$items.unit', 'Ton'] }, then: { $multiply: ['$items.quantity', 1000] } },
+                { 
+                  case: { $eq: ['$items.unit', 'Bags'] }, 
+                  then: {
+                    $multiply: [
+                      '$items.quantity',
+                      {
+                        $switch: {
+                          branches: [
+                            { case: { $eq: ['$items.packaging', '5kg Bags'] }, then: 5 },
+                            { case: { $eq: ['$items.packaging', '10kg Bags'] }, then: 10 },
+                            { case: { $eq: ['$items.packaging', '25kg Bags'] }, then: 25 },
+                            { case: { $eq: ['$items.packaging', '50kg Bags'] }, then: 50 },
+                          ],
+                          default: 0
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              default: '$items.quantity'
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$items.grade',
+          kg: { $sum: '$itemKg' },
+          amount: { $sum: '$items.totalAmount' }
+        }
+      },
+      { $project: { _id: 0, grade: '$_id', kg: { $round: ['$kg', 2] }, amount: { $round: ['$amount', 2] }, avgPricePerKg: { $cond: [ { $gt: ['$kg', 0] }, { $round: [ { $divide: ['$amount', '$kg'] }, 2 ] }, 0 ] } } },
+      { $sort: { amount: -1 } }
+    ]);
+
+    return {
+      executive: {
+        _id: user._id,
+        name: `${user.firstName} ${user.lastName}`,
+        employeeId: user.employeeId,
+        email: user.email,
+        phone: user.phone,
+        department: user.department,
+        position: user.position,
+        role: user.role?.name
+      },
+      metrics: metrics[0] || {
+        totalOrders: 0,
+        totalRevenue: 0,
+        totalPaid: 0,
+        avgOrderValue: 0,
+        maxOrderValue: 0,
+        minOrderValue: 0
+      },
+      monthlyTrend,
+      topCustomers,
+      recentOrders,
+      attaSummary: {
+        totalKg: attaTotalsAgg[0]?.totalKg || 0,
+        totalAmount: attaTotalsAgg[0]?.totalAmount || 0,
+        avgPricePerKg: (attaTotalsAgg[0] && attaTotalsAgg[0].totalKg > 0) ? Number(((attaTotalsAgg[0].totalAmount || 0) / attaTotalsAgg[0].totalKg).toFixed(2)) : 0,
+        byGrade: attaByGrade
+      }
+    };
+  } catch (error) {
+    throw new Error(`Failed to get executive performance detail: ${error.message}`);
+  }
+};
+
+/**
+ * Get Customer Purchase Detail
+ */
+exports.getCustomerPurchaseDetail = async (customerId, filters = {}) => {
+  try {
+    const { dateRange } = filters;
+
+    // Get customer info
+    const customer = await Customer.findById(customerId);
+
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+
+    // Build match criteria
+    const matchCriteria = { 
+      customer: new mongoose.Types.ObjectId(customerId),
+      type: 'order',
+      status: { $nin: ['cancelled', 'rejected'] }
+    };
+    
+    if (dateRange && dateRange.startDate && dateRange.endDate) {
+      matchCriteria.orderDate = {
+        $gte: dateRange.startDate,
+        $lte: dateRange.endDate
+      };
+    }
+
+    // Get orders
+    const orders = await Order.find(matchCriteria)
+      .populate('createdBy', 'firstName lastName employeeId')
+      .sort({ orderDate: -1 })
+      .limit(100);
+
+    // Get purchase metrics
+    const metrics = await Order.aggregate([
+      { $match: matchCriteria },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalSpent: { $sum: '$totalAmount' },
+          totalPaid: { $sum: '$paidAmount' },
+          avgOrderValue: { $avg: '$totalAmount' },
+          maxOrderValue: { $max: '$totalAmount' },
+          minOrderValue: { $min: '$totalAmount' }
+        }
+      }
+    ]);
+
+    // Get product insights
+    const productInsights = await Order.aggregate([
+      { $match: matchCriteria },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.productName',
+          totalQuantity: { $sum: '$items.quantity' },
+          totalAmount: { $sum: '$items.totalAmount' },
+          orderCount: { $sum: 1 }
+        }
+      },
+      { $sort: { totalAmount: -1 } },
+      { $limit: 10 }
+    ]);
+
+    // Get monthly trend
+    const monthlyTrend = await Order.aggregate([
+      { $match: matchCriteria },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$orderDate' },
+            month: { $month: '$orderDate' }
+          },
+          orders: { $sum: 1 },
+          spent: { $sum: '$totalAmount' }
+        }
+      },
+      { $sort: { '_id.year': -1, '_id.month': -1 } },
+      { $limit: 12 }
+    ]);
+
+    // Calculate days since last order
+    const lastOrder = orders[0];
+    const daysSinceLastOrder = lastOrder
+      ? Math.floor((new Date() - new Date(lastOrder.orderDate)) / (1000 * 60 * 60 * 24))
+      : null;
+
+    return {
+      customer: {
+        _id: customer._id,
+        customerId: customer.customerId,
+        businessName: customer.businessName,
+        contactPerson: customer.contactPersonName,
+        phone: customer.phone,
+        email: customer.email,
+        customerType: customer.customerType,
+        address: customer.address,
+        creditLimit: customer.creditLimit,
+        outstandingAmount: customer.outstandingAmount,
+        isActive: customer.isActive,
+        totalOrders: customer.totalOrders,
+        totalOrderValue: customer.totalOrderValue
+      },
+      metrics: metrics[0] || {
+        totalOrders: 0,
+        totalSpent: 0,
+        totalPaid: 0,
+        avgOrderValue: 0,
+        maxOrderValue: 0,
+        minOrderValue: 0
+      },
+      daysSinceLastOrder,
+      productInsights,
+      monthlyTrend,
+      recentOrders
+    };
+  } catch (error) {
+    throw new Error(`Failed to get customer purchase detail: ${error.message}`);
+  }
+};
+
