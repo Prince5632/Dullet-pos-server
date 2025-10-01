@@ -1,4 +1,4 @@
-const { User, Role, AuditLog } = require('../models');
+const { User, Role, AuditLog, UserSession } = require('../models');
 
 // Get all users with pagination and filtering
 const getAllUsers = async (queryParams, requestingUserId = null) => {
@@ -360,11 +360,64 @@ const reactivateUser = async (userId, reactivatedBy) => {
   };
 };
 
+// Reset user password (admin function)
+const resetUserPassword = async (userId, newPassword, adminUserId) => {
+  // Find the user to update
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  // Store old values for audit log
+  const oldValues = {
+    passwordLastChanged: user.passwordLastChanged
+  };
+
+  // Update password
+  user.password = newPassword;
+  user.passwordLastChanged = new Date();
+  user.updatedBy = adminUserId;
+  await user.save();
+
+  // End all active sessions for the user (force re-login)
+  await UserSession.updateMany(
+    { 
+      user: userId, 
+      isActive: true 
+    },
+    { 
+      isActive: false, 
+      logoutTime: new Date(),
+      autoLogoutReason: 'password_reset_by_admin'
+    }
+  );
+
+  // Log password reset action
+  await AuditLog.logAction({
+    user: adminUserId,
+    action: 'UPDATE',
+    module: 'users',
+    resourceType: 'User',
+    resourceId: userId,
+    description: `Password reset for user: ${user.fullName} (${user.email})`,
+    oldValues,
+    newValues: {
+      passwordLastChanged: user.passwordLastChanged
+    }
+  });
+
+  return {
+    success: true,
+    message: 'Password reset successfully. User will need to login again.'
+  };
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
   createUser,
   updateUser,
   deleteUser,
-  reactivateUser
+  reactivateUser,
+  resetUserPassword
 };

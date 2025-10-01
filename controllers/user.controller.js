@@ -181,11 +181,50 @@ const reactivateUser = async (req, res) => {
   }
 };
 
+// Reset user password controller (admin function)
+const resetUserPassword = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password is required'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+
+    const result = await userService.resetUserPassword(userId, password, req.user._id);
+    res.status(200).json(result);
+
+  } catch (error) {
+    if (error.message === 'User not found') {
+      return res.status(404).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
   createUser,
   updateUser,
   deleteUser,
-  reactivateUser
+  reactivateUser,
+  resetUserPassword
 };
