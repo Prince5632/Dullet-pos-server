@@ -1,5 +1,13 @@
 const { Attendance, User, Godown } = require('../models');
 
+// Helper to safely get an id string from either a populated document or ObjectId
+const getIdString = (maybeDocOrId) => {
+  if (!maybeDocOrId) return null;
+  if (typeof maybeDocOrId === 'string') return maybeDocOrId;
+  if (maybeDocOrId._id) return String(maybeDocOrId._id);
+  try { return String(maybeDocOrId); } catch { return null; }
+};
+
 class AttendanceService {
   // Get all attendance records with filtering and pagination
   async getAllAttendance(query, requestingUser) {
@@ -186,7 +194,7 @@ class AttendanceService {
     }
 
     // Check permissions - user can mark their own, managers can mark for their team
-    if (!this.canMarkAttendance(userId, markedByUser)) {
+    if (!this.canMarkAttendance(userId, markedByUser, user)) {
       throw new Error('Access denied: Cannot mark attendance for this user');
     }
 
@@ -273,6 +281,18 @@ class AttendanceService {
 
     // Update status if provided
     if (updateData.status && ['present', 'late', 'half_day', 'absent'].includes(updateData.status)) {
+      // Prevent changing own attendance status regardless of role
+      const attendanceUserId = getIdString(attendance.user);
+      if (attendanceUserId && attendanceUserId === String(updatedByUser._id)) {
+        throw new Error('You cannot change your own attendance status');
+      }
+
+      // Only Admin, Super Admin, or eligible Manager can change status
+      const roleName = updatedByUser.role?.name || '';
+      const isPrivileged = roleName.includes('Super Admin') || roleName.includes('Admin') || roleName.includes('Manager');
+      if (!isPrivileged) {
+        throw new Error('Access denied: Insufficient role to change attendance status');
+      }
       attendance.status = updateData.status;
     }
 
@@ -282,12 +302,34 @@ class AttendanceService {
     }
 
     // Update check-in/out times (managers/admins only)
-    if (updateData.checkInTime && (user.role.name.includes('Super Admin') || user.role.name.includes('Admin'))) {
-      attendance.checkInTime = new Date(updateData.checkInTime);
+    const roleName = updatedByUser.role?.name || '';
+    const canEditTimes = roleName.includes('Super Admin') || roleName.includes('Admin');
+    if (updateData.checkInTime && canEditTimes) {
+      const newCheckIn = new Date(updateData.checkInTime);
+      if (Number.isNaN(newCheckIn.getTime())) {
+        throw new Error('Invalid check-in time');
+      }
+      if (attendance.date && newCheckIn < new Date(attendance.date).setHours(0,0,0,0)) {
+        throw new Error('Check-in time cannot be before attendance date');
+      }
+      if (attendance.checkOutTime && newCheckIn > attendance.checkOutTime) {
+        throw new Error('Check-in time cannot be after existing check-out time');
+      }
+      attendance.checkInTime = newCheckIn;
     }
 
-    if (updateData.checkOutTime && (user.role.name.includes('Super Admin') || user.role.name.includes('Admin'))) {
-      attendance.checkOutTime = new Date(updateData.checkOutTime);
+    if (updateData.checkOutTime && canEditTimes) {
+      const newCheckOut = new Date(updateData.checkOutTime);
+      if (Number.isNaN(newCheckOut.getTime())) {
+        throw new Error('Invalid check-out time');
+      }
+      if (attendance.checkInTime && newCheckOut < attendance.checkInTime) {
+        throw new Error('Check-out time cannot be before check-in time');
+      }
+      if (newCheckOut > new Date()) {
+        throw new Error('Check-out time cannot be in the future');
+      }
+      attendance.checkOutTime = newCheckOut;
     }
 
     attendance.updatedBy = updatedByUser._id;
@@ -401,57 +443,71 @@ class AttendanceService {
 
   // Helper methods for permission checking
   canAccessAttendance(attendance, user) {
-    if (user.role.name.includes('Super Admin') || user.role.name.includes('Admin')) {
+    const roleName = user.role?.name || '';
+    if (roleName.includes('Super Admin') || roleName.includes('Admin')) {
       return true;
     }
     
-    if (user.role.name.includes('Manager')) {
+    if (roleName.includes('Manager')) {
       // Manager can access attendance of users in their godowns
-      const userGodowns = user.accessibleGodowns?.map(g => g._id || g) || [];
-      if (user.primaryGodown) {
-        userGodowns.push(user.primaryGodown._id || user.primaryGodown);
-      }
-      
-      return attendance.user._id.equals(user._id) || 
-             userGodowns.includes(attendance.godown?._id);
+      const userGodowns = (user.accessibleGodowns || []).map(g => getIdString(g)).filter(Boolean);
+      const primary = getIdString(user.primaryGodown);
+      if (primary) userGodowns.push(primary);
+
+      const attendanceUserId = getIdString(attendance.user);
+      const attendanceGodownId = getIdString(attendance.godown);
+      return attendanceUserId === String(user._id) || (attendanceGodownId && userGodowns.includes(attendanceGodownId));
     }
     
     // Sales Executive and Staff can only access their own
-    return attendance.user._id.equals(user._id);
+    const attendanceUserId = getIdString(attendance.user);
+    return attendanceUserId === String(user._id);
   }
 
-  canMarkAttendance(targetUserId, markingUser) {
-    if (markingUser.role.name.includes('Super Admin') || markingUser.role.name.includes('Admin')) {
+  canMarkAttendance(targetUserId, markingUser, targetUserDoc) {
+    const roleName = markingUser.role?.name || '';
+    if (roleName.includes('Super Admin') || roleName.includes('Admin')) {
       return true;
     }
     
-    if (markingUser.role.name.includes('Manager')) {
+    if (roleName.includes('Manager')) {
       // Manager can mark for users in their godowns
-      return true; // We'll implement detailed godown checking if needed
+      const target = targetUserDoc;
+      if (!target) return false;
+      const managerGodowns = (markingUser.accessibleGodowns || []).map(g => getIdString(g)).filter(Boolean);
+      const primaryManager = getIdString(markingUser.primaryGodown);
+      if (primaryManager) managerGodowns.push(primaryManager);
+
+      const targetGodowns = (target.accessibleGodowns || []).map(g => getIdString(g)).filter(Boolean);
+      const primaryTarget = getIdString(target.primaryGodown);
+      if (primaryTarget) targetGodowns.push(primaryTarget);
+
+      return targetGodowns.some(id => managerGodowns.includes(id));
     }
     
     // Users can mark their own attendance
-    return targetUserId.equals(markingUser._id);
+    return String(targetUserId) === String(markingUser._id);
   }
 
   canUpdateAttendance(attendance, user) {
-    if (user.role.name.includes('Super Admin') || user.role.name.includes('Admin')) {
+    const roleName = user.role?.name || '';
+    if (roleName.includes('Super Admin') || roleName.includes('Admin')) {
       return true;
     }
     
     // Users can always update their own attendance (for checkout)
-    if (attendance.user._id && attendance.user._id.toString() === user._id.toString()) {
+    const attendanceUserId = getIdString(attendance.user);
+    if (attendanceUserId && attendanceUserId === String(user._id)) {
       return true;
     }
     
-    if (user.role.name.includes('Manager')) {
+    if (roleName.includes('Manager')) {
       // Manager can update attendance of users in their godowns
-      const userGodowns = user.accessibleGodowns?.map(g => g._id || g) || [];
-      if (user.primaryGodown) {
-        userGodowns.push(user.primaryGodown._id || user.primaryGodown);
-      }
-      
-      return userGodowns.includes(attendance.godown?._id);
+      const userGodowns = (user.accessibleGodowns || []).map(g => getIdString(g)).filter(Boolean);
+      const primary = getIdString(user.primaryGodown);
+      if (primary) userGodowns.push(primary);
+      const attendanceGodownId = getIdString(attendance.godown);
+      return attendanceGodownId ? userGodowns.includes(attendanceGodownId) : false;
     }
     
     return false; // Other roles cannot update attendance records of others
