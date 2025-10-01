@@ -1599,6 +1599,35 @@ class OrderService {
       message: "Visit created successfully",
     };
   }
+  // Get order audit trail
+  async getOrderAuditTrail(orderId, page = 1, limit = 20) {
+    // First check if order exists
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    // Calculate skip value for pagination
+    const skip = (page - 1) * limit;
+
+    // Get audit trail for this order with pagination
+    const result = await AuditLog.getResourceAuditTrail('Order', orderId, { limit, skip });
+
+    return {
+      success: true,
+      message: 'Order audit trail retrieved successfully',
+      data: {
+        activities: result.logs,
+        pagination: {
+          currentPage: page,
+          totalItems: result.total,
+          itemsPerPage: limit,
+          totalPages: Math.ceil(result.total / limit),
+          hasMore: result.hasMore
+        }
+      }
+    };
+  }
 }
 
 module.exports = new OrderService();

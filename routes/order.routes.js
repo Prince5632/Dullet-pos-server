@@ -339,6 +339,84 @@ router.get('/:id', authenticate, authorize('orders.read'), orderController.getOr
 
 /**
  * @swagger
+ * /api/orders/{id}/audit-trail:
+ *   get:
+ *     summary: Get order audit trail
+ *     description: Retrieve the audit trail (activity log) for a specific order
+ *     tags: [Order Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order ID
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Maximum number of audit entries to return
+ *     responses:
+ *       200:
+ *         description: Order audit trail retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       _id:
+ *                         type: string
+ *                       user:
+ *                         type: object
+ *                         properties:
+ *                           firstName:
+ *                             type: string
+ *                           lastName:
+ *                             type: string
+ *                           email:
+ *                             type: string
+ *                           employeeId:
+ *                             type: string
+ *                       action:
+ *                         type: string
+ *                         enum: [CREATE, READ, UPDATE, DELETE, APPROVE, REJECT]
+ *                       module:
+ *                         type: string
+ *                       resourceType:
+ *                         type: string
+ *                       resourceId:
+ *                         type: string
+ *                       oldValues:
+ *                         type: object
+ *                       newValues:
+ *                         type: object
+ *                       description:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/:id/audit-trail', authenticate, authorize('orders.read'), orderController.getOrderAuditTrail);
+
+/**
+ * @swagger
  * /api/orders:
  *   post:
  *     summary: Create new order
