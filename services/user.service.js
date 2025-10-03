@@ -1,4 +1,96 @@
 const { User, Role, AuditLog, UserSession } = require("../models");
+const path = require("path");
+const fs = require("fs/promises");
+const crypto = require("crypto");
+const { sendNewUserCredentialsEmail } = require("../utils/email");
+
+const UPLOAD_ROOT = path.join(__dirname, "..", "uploads");
+const DOCUMENTS_SUBDIR = "documents";
+const PROFILES_SUBDIR = "profiles";
+
+const ensureDirExists = async (dirPath) => {
+  try {
+    await fs.mkdir(dirPath, { recursive: true });
+  } catch (err) {
+    console.error("Failed to ensure upload directory", err);
+    throw new Error("File storage unavailable");
+  }
+};
+
+const sanitizeFileName = (name) => {
+  if (!name) {
+    return `file-${Date.now()}`;
+  }
+  return name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+};
+
+const getExtensionFromMime = (mimeType) => {
+  if (!mimeType || !mimeType.includes("/")) return "";
+  const ext = mimeType.split("/").pop();
+  if (ext === "jpeg") return "jpg";
+  return ext || "";
+};
+
+const saveBufferToFile = async (buffer, subDir, originalName) => {
+  if (!buffer) return null;
+
+  const targetDir = path.join(UPLOAD_ROOT, subDir);
+  await ensureDirExists(targetDir);
+
+  const cleanName = sanitizeFileName(originalName);
+  const extension = path.extname(cleanName) || "";
+  const finalExtension = extension && extension.length <= 10 ? extension : ".bin";
+  const uniqueName = `${crypto.randomUUID()}${finalExtension}`;
+  const filePath = path.join(targetDir, uniqueName);
+
+  await fs.writeFile(filePath, buffer);
+
+  return {
+    fileName: uniqueName,
+    url: `/uploads/${subDir}/${uniqueName}`
+  };
+};
+
+const buildDocumentEntry = async (documentPayload) => {
+  if (!documentPayload?.buffer) return null;
+  const saved = await saveBufferToFile(
+    documentPayload.buffer,
+    DOCUMENTS_SUBDIR,
+    documentPayload.originalname || `${documentPayload.type || "document"}.pdf`
+  );
+  return {
+    type: documentPayload.type || "other",
+    label: documentPayload.label || documentPayload.originalname,
+    fileName: saved.fileName,
+    url: saved.url,
+    mimeType: documentPayload.mimetype
+  };
+};
+
+const normalizeAddress = (address) => {
+  if (!address || typeof address !== "object") return undefined;
+  const sanitized = {};
+  Object.entries(address).forEach(([key, value]) => {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed) sanitized[key] = trimmed;
+    }
+  });
+  return Object.keys(sanitized).length ? sanitized : undefined;
+};
+
+const normalizeString = (value) => {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+};
+
+const saveProfilePhoto = async (buffer, email, mimeType) => {
+  if (!buffer) return null;
+  const extension = getExtensionFromMime(mimeType) || "jpg";
+  const originalName = `${sanitizeFileName(email || "user")}-profile.${extension}`;
+  return await saveBufferToFile(buffer, PROFILES_SUBDIR, originalName);
+};
 
 // Get all users with pagination and filtering
 const getAllUsers = async (queryParams, requestingUserId = null) => {
@@ -171,14 +263,45 @@ const createUser = async (userData, createdBy) => {
     department,
     position,
     profilePhoto,
+    profilePhotoMimeType,
     primaryGodown,
     accessibleGodowns,
+    address,
+    aadhaarNumber,
+    panNumber,
+    aadhaarDocument,
+    panDocument,
+    otherDocuments = []
   } = userData;
 
   // Check if role exists
   const role = await Role.findById(roleId);
   if (!role || !role.isActive) {
     throw new Error("Invalid or inactive role");
+  }
+
+  const documentEntries = [];
+  if (aadhaarDocument) {
+    const entry = await buildDocumentEntry(aadhaarDocument);
+    if (entry) documentEntries.push({ ...entry, type: "aadhaar" });
+  }
+
+  if (panDocument) {
+    const entry = await buildDocumentEntry(panDocument);
+    if (entry) documentEntries.push({ ...entry, type: "pan" });
+  }
+
+  if (otherDocuments?.length) {
+    for (const documentPayload of otherDocuments) {
+      const entry = await buildDocumentEntry(documentPayload);
+      if (entry) documentEntries.push(entry);
+    }
+  }
+
+  let profilePhotoPath = null;
+  if (profilePhoto) {
+    const saved = await saveProfilePhoto(profilePhoto, email, profilePhotoMimeType);
+    profilePhotoPath = saved?.url || null;
   }
 
   // Create user object
@@ -191,19 +314,42 @@ const createUser = async (userData, createdBy) => {
     role: roleId,
     department,
     position: position.trim(),
-    profilePhoto: profilePhoto || null,
+    profilePhoto: profilePhotoPath,
     primaryGodown: primaryGodown || null,
     accessibleGodowns: Array.isArray(accessibleGodowns)
       ? accessibleGodowns
       : primaryGodown
       ? [primaryGodown]
       : [],
+    address: normalizeAddress(address),
+    aadhaarNumber: normalizeString(aadhaarNumber),
+    panNumber: normalizeString(panNumber)?.toUpperCase(),
+    documents: documentEntries,
     createdBy: createdBy,
     isActive: true,
   };
 
   const user = new User(newUserData);
   await user.save();
+
+  const creator = await User.findById(createdBy).select("firstName lastName email");
+  let emailSent = false;
+  try {
+    emailSent = await sendNewUserCredentialsEmail({
+      recipientEmail: user.email,
+      recipientName: `${user.firstName} ${user.lastName}`.trim(),
+      temporaryPassword: password,
+      createdByName: creator ? `${creator.firstName || ""} ${creator.lastName || ""}`.trim() : undefined
+    });
+  } catch (err) {
+    console.error("Failed to send onboarding email:", err.message || err);
+  }
+
+  if (!emailSent) {
+    console.log('⚠️  User created but email not sent. Credentials:');
+    console.log(`   📧 Email: ${user.email}`);
+    console.log(`   🔑 Password: ${password}`);
+  }
 
   // Log user creation
   await AuditLog.logAction({
@@ -257,6 +403,9 @@ const updateUser = async (userId, updateData, updatedBy) => {
     isActive: existingUser.isActive,
     primaryGodown: existingUser.primaryGodown,
     accessibleGodowns: existingUser.accessibleGodowns,
+    address: existingUser.address,
+    aadhaarNumber: existingUser.aadhaarNumber,
+    panNumber: existingUser.panNumber,
   };
 
   // Remove sensitive fields that shouldn't be updated via this route
@@ -286,6 +435,104 @@ const updateUser = async (userId, updateData, updatedBy) => {
       Boolean
     );
   }
+
+  if (updateData.profilePhoto) {
+    const saved = await saveProfilePhoto(updateData.profilePhoto, existingUser.email, updateData.profilePhotoMimeType);
+    updateData.profilePhoto = saved?.url || existingUser.profilePhoto;
+  }
+
+  if (updateData.address === null || updateData.address === "") {
+    updateData.address = undefined;
+  }
+
+  updateData.address = normalizeAddress(updateData.address);
+  updateData.aadhaarNumber = normalizeString(updateData.aadhaarNumber);
+  updateData.panNumber = normalizeString(updateData.panNumber)?.toUpperCase();
+
+  const updatedDocuments = [...(existingUser.documents || [])];
+
+  if (Array.isArray(updateData.removeDocumentIds) && updateData.removeDocumentIds.length > 0) {
+    updateData.removeDocumentIds.forEach((id) => {
+      const index = updatedDocuments.findIndex((doc) => doc._id?.toString() === id);
+      if (index !== -1) {
+        updatedDocuments.splice(index, 1);
+      }
+    });
+  }
+
+  const newDocumentEntries = [];
+  if (updateData.aadhaarDocument) {
+    const entry = await buildDocumentEntry(updateData.aadhaarDocument);
+    if (entry) {
+      const existingIndex = updatedDocuments.findIndex((doc) => doc.type === "aadhaar");
+      if (existingIndex !== -1) {
+        updatedDocuments[existingIndex] = { ...updatedDocuments[existingIndex], ...entry };
+      } else {
+        newDocumentEntries.push({ ...entry, type: "aadhaar" });
+      }
+    }
+  }
+
+  if (updateData.panDocument) {
+    const entry = await buildDocumentEntry(updateData.panDocument);
+    if (entry) {
+      const existingIndex = updatedDocuments.findIndex((doc) => doc.type === "pan");
+      if (existingIndex !== -1) {
+        updatedDocuments[existingIndex] = { ...updatedDocuments[existingIndex], ...entry };
+      } else {
+        newDocumentEntries.push({ ...entry, type: "pan" });
+      }
+    }
+  }
+
+  if (Array.isArray(updateData.otherDocumentsMeta) && updateData.otherDocumentsMeta.length) {
+    updateData.otherDocumentsMeta.forEach((meta, index) => {
+      if (meta?._id) {
+        const docIndex = updatedDocuments.findIndex((doc) => doc._id?.toString() === meta._id);
+        if (docIndex !== -1) {
+          updatedDocuments[docIndex] = {
+            ...updatedDocuments[docIndex],
+            label: meta.label || updatedDocuments[docIndex].label,
+            type: meta.type || updatedDocuments[docIndex].type,
+          };
+        }
+      } else if (updateData.otherDocuments?.[index]) {
+        updateData.otherDocuments[index] = {
+          ...updateData.otherDocuments[index],
+          label: meta.label || updateData.otherDocuments[index].originalname,
+          type: meta.type || updateData.otherDocuments[index].type || "other",
+        };
+      }
+    });
+  }
+
+  const otherDocumentsMeta = updateData.otherDocumentsMeta;
+  delete updateData.otherDocumentsMeta;
+
+  if (updateData.otherDocuments?.length) {
+    for (let index = 0; index < updateData.otherDocuments.length; index++) {
+      const documentPayload = updateData.otherDocuments[index];
+      const meta = Array.isArray(otherDocumentsMeta) ? otherDocumentsMeta[index] : undefined;
+      const payloadWithMeta = {
+        ...documentPayload,
+        label: meta?.label || documentPayload.originalname,
+        type: meta?.type || documentPayload.type || "other",
+      };
+      const entry = await buildDocumentEntry(payloadWithMeta);
+      if (entry) newDocumentEntries.push(entry);
+    }
+  }
+
+  if (newDocumentEntries.length) {
+    updatedDocuments.push(...newDocumentEntries);
+  }
+
+  updateData.documents = updatedDocuments;
+  delete updateData.aadhaarDocument;
+  delete updateData.panDocument;
+  delete updateData.otherDocuments;
+  delete updateData.removeDocumentIds;
+  delete updateData.profilePhotoMimeType;
 
   // Add updatedBy field
   updateData.updatedBy = updatedBy;
@@ -317,6 +564,9 @@ const updateUser = async (userId, updateData, updatedBy) => {
       department: updatedUser.department,
       position: updatedUser.position,
       isActive: updatedUser.isActive,
+      address: updatedUser.address,
+      aadhaarNumber: updatedUser.aadhaarNumber,
+      panNumber: updatedUser.panNumber,
     },
   });
 
@@ -327,22 +577,61 @@ const updateUser = async (userId, updateData, updatedBy) => {
   };
 };
 
-// Delete user (soft delete)
+// Delete user (hard delete - permanent removal)
 const deleteUser = async (userId, deletedBy) => {
   const user = await User.findById(userId);
   if (!user) {
     throw new Error("User not found");
   }
 
-  // Soft delete by setting isActive to false
-  user.isActive = false;
-  user.updatedBy = deletedBy;
-  await user.save();
+  // Store user info for audit log before deletion
+  const userInfo = {
+    fullName: user.fullName,
+    email: user.email,
+    employeeId: user.employeeId,
+    department: user.department,
+    position: user.position
+  };
 
-  // Log user deletion
+  // Log user deletion before removing
   await AuditLog.logAction({
     user: deletedBy,
     action: "DELETE",
+    module: "users",
+    resourceType: "User",
+    resourceId: userId,
+    description: `Permanently deleted user: ${userInfo.fullName} (${userInfo.email})`,
+    oldValues: userInfo,
+    newValues: null,
+  });
+
+  // Hard delete - permanently remove from database
+  await User.findByIdAndDelete(userId);
+
+  // Also remove all related sessions
+  await UserSession.deleteMany({ user: userId });
+
+  return {
+    success: true,
+    message: "User permanently deleted successfully",
+  };
+};
+
+// Deactivate user (soft delete - set isActive to false)
+const deactivateUser = async (userId, deactivatedBy) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  user.isActive = false;
+  user.updatedBy = deactivatedBy;
+  await user.save();
+
+  // Log user deactivation
+  await AuditLog.logAction({
+    user: deactivatedBy,
+    action: "UPDATE",
     module: "users",
     resourceType: "User",
     resourceId: userId,
@@ -474,6 +763,7 @@ module.exports = {
   createUser,
   updateUser,
   deleteUser,
+  deactivateUser,
   reactivateUser,
   resetUserPassword,
   getUserAuditTrail,

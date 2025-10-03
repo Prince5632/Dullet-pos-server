@@ -47,7 +47,11 @@ const createUser = async (req, res) => {
       department,
       position,
       primaryGodown,
-      accessibleGodowns
+      accessibleGodowns,
+      address,
+      aadhaarNumber,
+      panNumber,
+      otherDocumentsMeta
     } = req.body;
 
     // Validation
@@ -58,6 +62,51 @@ const createUser = async (req, res) => {
       });
     }
 
+    let parsedAddress = null;
+    if (address) {
+      try {
+        const parsed = typeof address === 'string' ? JSON.parse(address) : address;
+        parsedAddress = parsed && typeof parsed === 'object' ? parsed : null;
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid address format'
+        });
+      }
+    }
+
+    let parsedOtherDocumentsMeta = [];
+    if (otherDocumentsMeta) {
+      try {
+        parsedOtherDocumentsMeta = typeof otherDocumentsMeta === 'string'
+          ? JSON.parse(otherDocumentsMeta)
+          : otherDocumentsMeta;
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid other documents metadata'
+        });
+      }
+    }
+
+    const buildDocumentPayload = (file, defaultType) => file ? {
+      buffer: file.buffer,
+      mimetype: file.mimetype,
+      originalname: file.originalname,
+      type: defaultType
+    } : null;
+
+    const files = req.files || {};
+    const aadhaarDoc = buildDocumentPayload(files.aadhaarDocument?.[0], 'aadhaar');
+    const panDoc = buildDocumentPayload(files.panDocument?.[0], 'pan');
+    const otherDocs = (files.otherDocuments || []).map((file, index) => ({
+      buffer: file.buffer,
+      mimetype: file.mimetype,
+      originalname: file.originalname,
+      type: parsedOtherDocumentsMeta[index]?.type || 'other',
+      label: parsedOtherDocumentsMeta[index]?.label || file.originalname
+    }));
+
     const userData = {
       firstName,
       lastName,
@@ -67,9 +116,16 @@ const createUser = async (req, res) => {
       roleId,
       department,
       position,
-      profilePhoto: req.file ? req.file.buffer.toString('base64') : null,
+      profilePhoto: files.profilePhoto?.[0]?.buffer || null,
+      profilePhotoMimeType: files.profilePhoto?.[0]?.mimetype,
       primaryGodown,
-      accessibleGodowns
+      accessibleGodowns,
+      address: parsedAddress,
+      aadhaarNumber,
+      panNumber,
+      aadhaarDocument: aadhaarDoc,
+      panDocument: panDoc,
+      otherDocuments: otherDocs
     };
 
     const result = await userService.createUser(userData, req.user._id);
@@ -98,8 +154,52 @@ const updateUser = async (req, res) => {
     const updateData = { ...req.body };
 
     // Handle profile photo upload
-    if (req.file) {
-      updateData.profilePhoto = req.file.buffer.toString('base64');
+    if (req.files?.profilePhoto?.[0]) {
+      updateData.profilePhoto = req.files.profilePhoto[0].buffer;
+      updateData.profilePhotoMimeType = req.files.profilePhoto[0].mimetype;
+    }
+
+    const parseJsonField = (field, errorMessage) => {
+      if (!updateData[field]) return undefined;
+      try {
+        return typeof updateData[field] === 'string'
+          ? JSON.parse(updateData[field])
+          : updateData[field];
+      } catch (err) {
+        throw new Error(errorMessage);
+      }
+    };
+
+    const parsedAddress = parseJsonField('address', 'Invalid address format');
+    if (parsedAddress !== undefined) {
+      updateData.address = parsedAddress;
+    }
+
+    const parsedDocumentRemovals = parseJsonField('removeDocumentIds', 'Invalid document removal payload');
+    if (parsedDocumentRemovals !== undefined) {
+      updateData.removeDocumentIds = parsedDocumentRemovals;
+    }
+
+    const parsedOtherDocumentsMeta = parseJsonField('otherDocumentsMeta', 'Invalid other documents metadata');
+
+    const buildDocumentPayload = (file, defaultType, index = 0) => file ? {
+      buffer: file.buffer,
+      mimetype: file.mimetype,
+      originalname: file.originalname,
+      type: parsedOtherDocumentsMeta?.[index]?.type || defaultType,
+      label: parsedOtherDocumentsMeta?.[index]?.label || file.originalname
+    } : null;
+
+    if (req.files?.aadhaarDocument?.[0]) {
+      updateData.aadhaarDocument = buildDocumentPayload(req.files.aadhaarDocument[0], 'aadhaar');
+    }
+
+    if (req.files?.panDocument?.[0]) {
+      updateData.panDocument = buildDocumentPayload(req.files.panDocument[0], 'pan');
+    }
+
+    if (req.files?.otherDocuments?.length) {
+      updateData.otherDocuments = req.files.otherDocuments.map((file, index) => buildDocumentPayload(file, 'other', index));
     }
 
     const result = await userService.updateUser(userId, updateData, req.user._id);
@@ -108,6 +208,15 @@ const updateUser = async (req, res) => {
   } catch (error) {
     if (error.message === 'User not found') {
       return res.status(404).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    if (error.message === 'Invalid address format' ||
+        error.message === 'Invalid document removal payload' ||
+        error.message === 'Invalid other documents metadata') {
+      return res.status(400).json({
         success: false,
         message: error.message
       });
@@ -142,6 +251,37 @@ const deleteUser = async (req, res) => {
     }
 
     const result = await userService.deleteUser(userId, req.user._id);
+    res.status(200).json(result);
+
+  } catch (error) {
+    if (error.message === 'User not found') {
+      return res.status(404).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Deactivate user controller
+const deactivateUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Prevent self-deactivation
+    if (userId === req.user._id.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot deactivate your own account'
+      });
+    }
+
+    const result = await userService.deactivateUser(userId, req.user._id);
     res.status(200).json(result);
 
   } catch (error) {
@@ -252,6 +392,7 @@ module.exports = {
   createUser,
   updateUser,
   deleteUser,
+  deactivateUser,
   reactivateUser,
   resetUserPassword,
   getUserAuditTrail

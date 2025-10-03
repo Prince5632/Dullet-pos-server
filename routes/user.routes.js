@@ -5,19 +5,39 @@ const { authenticate, authorize } = require('../middlewares/auth.middleware');
 
 const router = express.Router();
 
-// Configure multer for profile photo upload
+// Configure multer for profile photo and document uploads
 const storage = multer.memoryStorage();
+const allowedDocumentMimeTypes = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]);
 const upload = multer({
   storage: storage,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'), false);
+    const { fieldname, mimetype } = file;
+
+    if (fieldname === 'profilePhoto') {
+      if (mimetype.startsWith('image/')) {
+        return cb(null, true);
+      }
+      return cb(new Error('Only image files are allowed for profile photo uploads'), false);
     }
+
+    if (['aadhaarDocument', 'panDocument', 'otherDocuments'].includes(fieldname)) {
+      if (mimetype.startsWith('image/')) {
+        return cb(null, true);
+      }
+      if (allowedDocumentMimeTypes.has(mimetype)) {
+        return cb(null, true);
+      }
+      return cb(new Error('Unsupported document file type'), false);
+    }
+
+    return cb(new Error('Invalid file field provided'), false);
   }
 });
 
@@ -174,7 +194,12 @@ router.get('/:id', authenticate, authorize('users.read'), userController.getUser
  *       403:
  *         description: Insufficient permissions
  */
-router.post('/', authenticate, authorize('users.create'), upload.single('profilePhoto'), userController.createUser);
+router.post('/', authenticate, authorize('users.create'), upload.fields([
+  { name: 'profilePhoto', maxCount: 1 },
+  { name: 'aadhaarDocument', maxCount: 1 },
+  { name: 'panDocument', maxCount: 1 },
+  { name: 'otherDocuments', maxCount: 5 }
+]), userController.createUser);
 
 /**
  * @swagger
@@ -226,13 +251,52 @@ router.post('/', authenticate, authorize('users.create'), upload.single('profile
  *       403:
  *         description: Insufficient permissions
  */
-router.put('/:id', authenticate, authorize('users.update'), upload.single('profilePhoto'), userController.updateUser);
+router.put('/:id', authenticate, authorize('users.update'), upload.fields([
+  { name: 'profilePhoto', maxCount: 1 },
+  { name: 'aadhaarDocument', maxCount: 1 },
+  { name: 'panDocument', maxCount: 1 },
+  { name: 'otherDocuments', maxCount: 5 }
+]), userController.updateUser);
 
 /**
  * @swagger
  * /api/users/{id}:
  *   delete:
- *     summary: Delete user (soft delete)
+ *     summary: Delete user (hard delete)
+ *     description: Permanently remove user from database
+ *     tags: [User Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: User permanently deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       400:
+ *         description: Cannot delete own account
+ *       404:
+ *         description: User not found
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.delete('/:id', authenticate, authorize('users.delete'), userController.deleteUser);
+
+/**
+ * @swagger
+ * /api/users/{id}/deactivate:
+ *   put:
+ *     summary: Deactivate user
  *     description: Deactivate user by setting isActive to false
  *     tags: [User Management]
  *     security:
@@ -252,7 +316,7 @@ router.put('/:id', authenticate, authorize('users.update'), upload.single('profi
  *             schema:
  *               $ref: '#/components/schemas/SuccessResponse'
  *       400:
- *         description: Cannot delete own account
+ *         description: Cannot deactivate own account
  *       404:
  *         description: User not found
  *       401:
@@ -260,7 +324,7 @@ router.put('/:id', authenticate, authorize('users.update'), upload.single('profi
  *       403:
  *         description: Insufficient permissions
  */
-router.delete('/:id', authenticate, authorize('users.delete'), userController.deleteUser);
+router.put('/:id/deactivate', authenticate, authorize('users.update'), userController.deactivateUser);
 
 /**
  * @swagger

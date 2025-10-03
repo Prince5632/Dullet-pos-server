@@ -63,11 +63,11 @@ const auditLogSchema = new mongoose.Schema({
   },
   ipAddress: {
     type: String,
-    required: true
+    default: 'unknown'
   },
   userAgent: {
     type: String,
-    required: true
+    default: 'system'
   },
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,

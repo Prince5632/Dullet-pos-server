@@ -73,7 +73,41 @@ const options = {
             },
             profilePhoto: {
               type: 'string',
-              description: 'Base64 encoded profile photo'
+              description: 'Profile photo URL'
+            },
+            address: {
+              type: 'object',
+              properties: {
+                line1: { type: 'string' },
+                line2: { type: 'string' },
+                city: { type: 'string' },
+                state: { type: 'string' },
+                pincode: { type: 'string' },
+                country: { type: 'string' }
+              }
+            },
+            aadhaarNumber: {
+              type: 'string',
+              description: 'Aadhaar identification number'
+            },
+            panNumber: {
+              type: 'string',
+              description: 'PAN identification number'
+            },
+            documents: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  _id: { type: 'string' },
+                  type: { type: 'string', enum: ['aadhaar', 'pan', 'other'] },
+                  label: { type: 'string' },
+                  fileName: { type: 'string' },
+                  mimeType: { type: 'string' },
+                  url: { type: 'string' },
+                  uploadedAt: { type: 'string', format: 'date-time' }
+                }
+              }
             },
             role: {
               $ref: '#/components/schemas/Role'
@@ -157,6 +191,40 @@ const options = {
               type: 'string',
               format: 'binary',
               description: 'Profile photo file'
+            },
+            address: {
+              type: 'string',
+              description: 'JSON string containing address information'
+            },
+            aadhaarNumber: {
+              type: 'string',
+              description: 'Aadhaar identification number'
+            },
+            panNumber: {
+              type: 'string',
+              description: 'PAN identification number'
+            },
+            aadhaarDocument: {
+              type: 'string',
+              format: 'binary',
+              description: 'Aadhaar document (image/PDF)'
+            },
+            panDocument: {
+              type: 'string',
+              format: 'binary',
+              description: 'PAN document (image/PDF)'
+            },
+            otherDocuments: {
+              type: 'array',
+              items: {
+                type: 'string',
+                format: 'binary'
+              },
+              description: 'Additional supporting documents'
+            },
+            otherDocumentsMeta: {
+              type: 'string',
+              description: 'JSON array describing other documents { label, type }'
             }
           }
         },
@@ -201,6 +269,39 @@ const options = {
               type: 'string',
               format: 'binary',
               description: 'Profile photo file'
+            },
+            address: {
+              type: 'string',
+              description: 'JSON string containing address information'
+            },
+            aadhaarNumber: {
+              type: 'string'
+            },
+            panNumber: {
+              type: 'string'
+            },
+            aadhaarDocument: {
+              type: 'string',
+              format: 'binary'
+            },
+            panDocument: {
+              type: 'string',
+              format: 'binary'
+            },
+            otherDocuments: {
+              type: 'array',
+              items: {
+                type: 'string',
+                format: 'binary'
+              }
+            },
+            otherDocumentsMeta: {
+              type: 'string',
+              description: 'JSON array describing other documents { label, type }'
+            },
+            removeDocumentIds: {
+              type: 'string',
+              description: 'JSON array of document IDs to remove'
             }
           }
         },

@@ -62,6 +62,49 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Godown'
   }],
+  address: {
+    line1: { type: String, trim: true },
+    line2: { type: String, trim: true },
+    city: { type: String, trim: true },
+    state: { type: String, trim: true },
+    pincode: { type: String, trim: true },
+    country: { type: String, trim: true }
+  },
+  aadhaarNumber: {
+    type: String,
+    trim: true
+  },
+  panNumber: {
+    type: String,
+    trim: true,
+    uppercase: true
+  },
+  documents: [{
+    type: {
+      type: String,
+      enum: ['aadhaar', 'pan', 'other'],
+      required: true
+    },
+    label: {
+      type: String,
+      trim: true
+    },
+    fileName: {
+      type: String,
+      trim: true
+    },
+    mimeType: {
+      type: String
+    },
+    url: {
+      type: String,
+      required: true
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   isActive: {
     type: Boolean,
     default: true
