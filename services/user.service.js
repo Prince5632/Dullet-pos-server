@@ -257,6 +257,7 @@ const createUser = async (userData, createdBy) => {
     firstName,
     lastName,
     email,
+    username,
     phone,
     password,
     roleId,
@@ -308,7 +309,8 @@ const createUser = async (userData, createdBy) => {
   const newUserData = {
     firstName: firstName.trim(),
     lastName: lastName.trim(),
-    email: email.toLowerCase().trim(),
+    email: email ? email.toLowerCase().trim() : undefined,
+    username: username ? username.toLowerCase().trim() : undefined,
     phone: phone.trim(),
     password,
     role: roleId,

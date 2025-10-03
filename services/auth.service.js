@@ -2,13 +2,21 @@ const { User, UserSession, AuditLog, Attendance } = require('../models');
 const { generateToken } = require('../middlewares/auth.middleware');
 const crypto = require('crypto');
 
-// User login
+// User login (supports identifier: email | username | phone)
 const login = async (loginData) => {
-  const { email, password, ipAddress, userAgent, faceImage } = loginData;
+  const { email, identifier, password, ipAddress, userAgent, faceImage } = loginData;
 
   try {
-      // Find user by email
-      const user = await User.findOne({ email: email.toLowerCase() })
+      // Determine identifier: email field kept for backward compatibility
+      const queryIdentifier = (identifier || email || '').toString().trim().toLowerCase();
+      // Find user by email, username or phone
+      const user = await User.findOne({
+        $or: [
+          { email: queryIdentifier },
+          { username: queryIdentifier },
+          { phone: queryIdentifier }
+        ]
+      })
         .populate({
           path: 'role',
           populate: {

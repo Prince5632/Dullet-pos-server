@@ -41,6 +41,7 @@ const createUser = async (req, res) => {
       firstName,
       lastName,
       email,
+      username,
       phone,
       password,
       roleId,
@@ -55,10 +56,18 @@ const createUser = async (req, res) => {
     } = req.body;
 
     // Validation
-    if (!firstName || !lastName || !email || !phone || !password || !roleId || !department || !position) {
+    if (!firstName || !lastName || !phone || !password || !roleId || !department || !position) {
       return res.status(400).json({
         success: false,
         message: 'All required fields must be provided'
+      });
+    }
+
+    // Require at least one among email or username
+    if (!email && !username) {
+      return res.status(400).json({
+        success: false,
+        message: 'Either email or username is required'
       });
     }
 
@@ -111,6 +120,7 @@ const createUser = async (req, res) => {
       firstName,
       lastName,
       email,
+      username,
       phone,
       password,
       roleId,

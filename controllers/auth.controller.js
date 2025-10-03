@@ -3,17 +3,18 @@ const authService = require('../services/auth.service');
 // Login controller
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, identifier, password } = req.body;
 
-    if (!email || !password) {
+    if (!(email || identifier) || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Email and password are required'
+        message: 'Identifier and password are required'
       });
     }
 
     const loginData = {
       email,
+      identifier,
       password,
       ipAddress: req.ip || req.connection.remoteAddress,
       userAgent: req.get('User-Agent'),
