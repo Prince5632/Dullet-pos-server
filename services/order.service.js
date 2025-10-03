@@ -1480,7 +1480,7 @@ class OrderService {
         throw new Error(`Quantity missing or invalid for item ${idx + 1}`);
       }
 
-      const ratePerUnit = Number(p.pricePerKg);
+      const ratePerUnit = Number(it.ratePerKg ?? p.pricePerKg);
       const totalAmount = quantityKg * ratePerUnit;
 
       return {
