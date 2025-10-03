@@ -76,9 +76,8 @@ roleSchema.statics.seedDefaultRoles = async function() {
       description: 'Sales operations access',
       permissions: allPermissions.filter(p => 
         (p.module === 'orders' && ['create', 'read', 'update'].includes(p.action)) ||
-        (p.module === 'customers' && ['create', 'read', 'update'].includes(p.action)) ||
+        // (p.module === 'customers' && ['create', 'read', 'update'].includes(p.action)) ||
         (p.module === 'stock' && p.action === 'read') ||
-        (p.module === 'reports' && p.action === 'read') ||
         (p.module === 'attendance' && ['create', 'read'].includes(p.action)) ||
         (p.module === 'godowns' && p.action === 'read')
       ).map(p => p._id),
