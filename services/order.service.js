@@ -646,7 +646,7 @@ class OrderService {
     };
   }
 
-  async assignDriver(orderId, driverId, assignedBy, notes = "") {
+  async assignDriver(orderId, driverId, assignedBy, notes = "", vehicleNumber = "") {
     const { User } = require("../models");
 
     const user = await User.findById(assignedBy).populate("role");
@@ -688,6 +688,7 @@ class OrderService {
       driver: driverId,
       assignedAt: new Date(),
       driverNotes: notes || "",
+      vehicleNumber: vehicleNumber || "",
     };
     order.updatedBy = assignedBy;
 

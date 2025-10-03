@@ -160,7 +160,8 @@ const orderSchema = new mongoose.Schema({
         longitude: Number,
         address: String
       },
-      driverNotes: { type: String }
+      driverNotes: { type: String },
+      vehicleNumber: { type: String }
     },
     default: {}
   },

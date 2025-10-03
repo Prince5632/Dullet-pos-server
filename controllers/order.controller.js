@@ -162,8 +162,8 @@ const rejectOrder = async (req, res) => {
 
 const assignDriver = async (req, res) => {
   try {
-    const { driverId, notes } = req.body;
-    const result = await orderService.assignDriver(req.params.id, driverId, req.user.id, notes);
+    const { driverId, notes, vehicleNumber } = req.body;
+    const result = await orderService.assignDriver(req.params.id, driverId, req.user.id, notes, vehicleNumber);
     res.status(200).json(result);
   } catch (error) {
     buildErrorResponse(res, error);
