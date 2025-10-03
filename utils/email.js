@@ -83,7 +83,7 @@ const sendNewUserCredentialsEmail = async ({
           <p>
             <a href="${loginLink}" style="display: inline-block; padding: 10px 18px; background-color: #1d4ed8; color: #fff; border-radius: 6px; text-decoration: none;">Login to Dullet POS</a>
           </p>
-          <p style="margin-top: 16px;">Please change your password after logging in.</p>
+          <p style="margin-top: 16px;">Don not share this email with anyone.</p>
           <p>Regards,<br/>Dullet Industries Team</p>
         </div>
       `
