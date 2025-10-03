@@ -1523,6 +1523,8 @@ class OrderService {
         quantityKg = it.quantityKg;
       } else if (typeof it.bags === "number" && it.bags > 0 && product.bagSizeKg) {
         quantityKg = it.bags * product.bagSizeKg;
+      } else if (typeof it.bagPieces === "number" && it.bagPieces > 0 && product.bagSizeKg) {
+        quantityKg = it.bagPieces * product.bagSizeKg;
       } else {
         throw new Error(`Quantity missing or invalid for item ${idx + 1}`);
       }

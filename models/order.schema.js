@@ -33,7 +33,7 @@ const orderItemSchema = new mongoose.Schema({
   // Additional specifications
   packaging: {
     type: String,
-    enum: ['Standard', 'Custom', '5kg Bags', '10kg Bags', '25kg Bags', '50kg Bags', 'Loose'],
+    enum: ['Standard', 'Custom', '5kg Bags', '10kg Bags', '25kg Bags', '50kg Bags', '40kg Bag', 'Loose'],
     default: 'Standard'
   }
 });

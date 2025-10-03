@@ -11,11 +11,6 @@ const customerSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
-  contactPersonName: {
-    type: String,
-    required: true,
-    trim: true
-  },
   email: {
     type: String,
     required: false,
@@ -29,6 +24,11 @@ const customerSchema = new mongoose.Schema({
   alternatePhone: {
     type: String,
     required: false
+  },
+  location: {
+    type: String,
+    required: false,
+    trim: true
   },
   // Address Information
   address: {
