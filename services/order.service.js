@@ -1,8 +1,11 @@
 const { Order, Customer, Godown } = require("../models");
 const { AuditLog } = require("../models");
 const {
-  QUICK_PRODUCTS,
-  getQuickProductsMap,
+  QUICK_PRODUCT_BASES,
+  CITY_CONFIG,
+  CITY_TOKENS,
+  getProductsForGodowns,
+  getProductsForGodown,
 } = require("../config/pricing.config");
 
 class OrderService {
@@ -1425,10 +1428,32 @@ class OrderService {
   }
 
   // Quick-order: expose catalog
-  getQuickProducts() {
+  async getQuickProducts(requestingUser) {
+    let godowns = [];
+
+    if (requestingUser) {
+      const godownIds = [];
+      if (requestingUser.primaryGodown) {
+        godownIds.push(requestingUser.primaryGodown);
+      }
+      if (Array.isArray(requestingUser.accessibleGodowns)) {
+        requestingUser.accessibleGodowns.forEach((g) => godownIds.push(g));
+      }
+
+      if (godownIds.length > 0) {
+        godowns = await Godown.find({ _id: { $in: godownIds } }).select('location city name');
+      }
+    }
+
+    if (!godowns.length) {
+      godowns = await Godown.find({ isActive: true }).select('location city name');
+    }
+
+    const products = getProductsForGodowns(godowns);
+
     return {
       success: true,
-      data: { products: QUICK_PRODUCTS },
+      data: { products },
     };
   }
 
@@ -1460,37 +1485,59 @@ class OrderService {
       throw new Error("Capture location is required for quick orders");
     }
 
-    const productMap = getQuickProductsMap();
-    if (!Array.isArray(items) || items.length === 0) {
-      throw new Error("At least one item is required");
+    const userGodowns = [];
+    const creator = await require("../models").User.findById(createdBy).populate('primaryGodown accessibleGodowns');
+    if (creator?.primaryGodown) userGodowns.push(creator.primaryGodown);
+    if (Array.isArray(creator?.accessibleGodowns)) userGodowns.push(...creator.accessibleGodowns);
+
+    let pricingGodown = null;
+    if (quickData.godown) {
+      pricingGodown = await Godown.findById(quickData.godown).select('location city name');
+    }
+    if (!pricingGodown && userGodowns.length > 0) {
+      pricingGodown = userGodowns[0];
     }
 
-    // Build standard order items
-    const orderItems = items.map((it, idx) => {
-      const p = productMap[it.productKey];
-      if (!p) throw new Error(`Invalid product key at item ${idx + 1}`);
+    if (!pricingGodown) {
+      throw new Error('Unable to determine godown for pricing');
+    }
 
+    const availableProducts = getProductsForGodown(pricingGodown);
+    const productMap = availableProducts.reduce((acc, p) => {
+      acc[p.key] = p;
+      return acc;
+    }, {});
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('At least one item is required');
+    }
+
+    const orderItems = items.map((it, idx) => {
+      const product = productMap[it.productKey];
+      if (!product) {
+        throw new Error(`Product ${it.productKey} is not available for the selected godown`);
+      }
       // Determine quantity in KG
       let quantityKg = 0;
       if (typeof it.quantityKg === "number" && it.quantityKg > 0) {
         quantityKg = it.quantityKg;
-      } else if (typeof it.bags === "number" && it.bags > 0 && p.bagSizeKg) {
-        quantityKg = it.bags * p.bagSizeKg;
+      } else if (typeof it.bags === "number" && it.bags > 0 && product.bagSizeKg) {
+        quantityKg = it.bags * product.bagSizeKg;
       } else {
         throw new Error(`Quantity missing or invalid for item ${idx + 1}`);
       }
 
-      const ratePerUnit = Number(p.pricePerKg);
+      const ratePerUnit = Number(product.pricePerKg);
       const totalAmount = quantityKg * ratePerUnit;
 
       return {
-        productName: p.name,
+        productName: product.name,
         grade: "",
         quantity: quantityKg,
         unit: "KG",
         ratePerUnit,
         totalAmount,
-        packaging: it.packaging || p.defaultPackaging || "Standard",
+        packaging: it.packaging || product.defaultPackaging || "Standard",
       };
     });
 

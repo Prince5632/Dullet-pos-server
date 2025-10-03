@@ -364,9 +364,9 @@ const getOrderStats = async (req, res) => {
 };
 
 // Quick-order: get catalog
-const getQuickProducts = async (_req, res) => {
+const getQuickProducts = async (req, res) => {
   try {
-    const result = await orderService.getQuickProducts();
+    const result = await orderService.getQuickProducts(req.user);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
