@@ -340,7 +340,7 @@ const cancelOrder = async (req, res) => {
 // Get orders by status controller
 const getOrdersByStatus = async (req, res) => {
   try {
-    const result = await orderService.getOrdersByStatus(req.params.status, req.query);
+    const result = await orderService.getOrdersByStatus(req.params.status, req.query, req.user);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({

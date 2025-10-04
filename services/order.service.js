@@ -138,23 +138,35 @@ class OrderService {
       currentUser.role &&
       currentUser.role.name !== "Super Admin"
     ) {
-      // Only restrict if not super admin; ensure IDs not populated docs
-      const toIds = (arr) =>
-        (arr || []).map((v) => (typeof v === "object" && v?._id ? v._id : v));
-      const accessibleList = currentUser.accessibleGodowns?.length
-        ? toIds(currentUser.accessibleGodowns)
-        : currentUser.primaryGodown
-        ? [
-            typeof currentUser.primaryGodown === "object"
-              ? currentUser.primaryGodown._id
-              : currentUser.primaryGodown,
-          ]
-        : [];
-      if (accessibleList && accessibleList.length > 0) {
-        filter.godown = { $in: accessibleList };
-      } else {
-        // If user has no assigned godowns, show only their own orders as a fallback
+      // Role-based filtering
+      const roleName = currentUser.role.name;
+      
+      if (roleName === 'Driver') {
+        // Drivers can only see orders assigned to them
+        filter['driverAssignment.driver'] = currentUser._id;
+      } else if (['Sales Executive', 'Staff'].includes(roleName)) {
+        // Sales Executive and Staff: only show their own created orders
         filter.createdBy = currentUser._id;
+      } else {
+        // Manager, Admin, and other roles: show orders from their accessible godowns
+        // Only restrict if not super admin; ensure IDs not populated docs
+        const toIds = (arr) =>
+          (arr || []).map((v) => (typeof v === "object" && v?._id ? v._id : v));
+        const accessibleList = currentUser.accessibleGodowns?.length
+          ? toIds(currentUser.accessibleGodowns)
+          : currentUser.primaryGodown
+          ? [
+              typeof currentUser.primaryGodown === "object"
+                ? currentUser.primaryGodown._id
+                : currentUser.primaryGodown,
+            ]
+          : [];
+        if (accessibleList && accessibleList.length > 0) {
+          filter.godown = { $in: accessibleList };
+        } else {
+          // If user has no assigned godowns, show only their own orders as a fallback
+          filter.createdBy = currentUser._id;
+        }
       }
     }
 
@@ -1293,7 +1305,7 @@ class OrderService {
   }
 
   // Get orders by status
-  async getOrdersByStatus(status, query = {}) {
+  async getOrdersByStatus(status, query = {}, currentUser) {
     const {
       page = 1,
       limit = 10,
@@ -1319,6 +1331,43 @@ class OrderService {
       }
       if (dateTo) {
         filter.orderDate.$lte = new Date(dateTo);
+      }
+    }
+
+    // Apply same role-based filtering as getAllOrders
+    if (
+      currentUser &&
+      currentUser.role &&
+      currentUser.role.name !== "Super Admin"
+    ) {
+      // Role-based filtering
+      const roleName = currentUser.role.name;
+      
+      if (roleName === 'Driver') {
+        // Drivers can only see orders assigned to them
+        filter['driverAssignment.driver'] = currentUser._id;
+      } else if (['Sales Executive', 'Staff'].includes(roleName)) {
+        // Sales Executive and Staff: only show their own orders
+        filter.createdBy = currentUser._id;
+      } else {
+        // Manager, Admin, and other roles: show orders from their accessible godowns
+        const toIds = (arr) =>
+          (arr || []).map((v) => (typeof v === "object" && v?._id ? v._id : v));
+        const accessibleList = currentUser.accessibleGodowns?.length
+          ? toIds(currentUser.accessibleGodowns)
+          : currentUser.primaryGodown
+          ? [
+              typeof currentUser.primaryGodown === "object"
+                ? currentUser.primaryGodown._id
+                : currentUser.primaryGodown,
+            ]
+          : [];
+        if (accessibleList && accessibleList.length > 0) {
+          filter.godown = { $in: accessibleList };
+        } else {
+          // If user has no assigned godowns, show only their own orders as a fallback
+          filter.createdBy = currentUser._id;
+        }
       }
     }
 
@@ -1370,14 +1419,29 @@ class OrderService {
       currentUser.role &&
       currentUser.role.name !== "Super Admin"
     ) {
-      // Non super-admins limited to their accessible/primary godowns
-      const accessible = currentUser.accessibleGodowns?.length
-        ? currentUser.accessibleGodowns
-        : currentUser.primaryGodown
-        ? [currentUser.primaryGodown]
-        : [];
-      if (accessible && accessible.length > 0) {
-        filter.godown = { $in: accessible };
+      // Role-based filtering
+      const roleName = currentUser.role.name;
+      
+      if (roleName === 'Driver') {
+        // Drivers can only see stats for orders assigned to them
+        filter['driverAssignment.driver'] = currentUser._id;
+      } else if (['Sales Executive', 'Staff'].includes(roleName)) {
+        // Sales Executive and Staff: only show their own order stats
+        filter.createdBy = currentUser._id;
+      } else {
+        // Manager, Admin, and other roles: show stats from their accessible godowns
+        // Non super-admins limited to their accessible/primary godowns
+        const accessible = currentUser.accessibleGodowns?.length
+          ? currentUser.accessibleGodowns
+          : currentUser.primaryGodown
+          ? [currentUser.primaryGodown]
+          : [];
+        if (accessible && accessible.length > 0) {
+          filter.godown = { $in: accessible };
+        } else {
+          // If user has no assigned godowns, show only their own stats as a fallback
+          filter.createdBy = currentUser._id;
+        }
       }
     }
 
