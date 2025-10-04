@@ -1454,24 +1454,31 @@ class OrderService {
 
     const [
       totalOrders,
+      totalVisits,
       pendingOrders,
       approvedOrders,
       completedOrders,
       rejectedOrders,
       todayOrders,
+      todayVisits,
       monthlyRevenue,
     ] = await Promise.all([
-      Order.countDocuments(filter),
-      Order.countDocuments({ ...filter, status: "pending" }),
-      Order.countDocuments({ ...filter, status: "approved" }),
-      Order.countDocuments({ ...filter, status: "completed" }),
-      Order.countDocuments({ ...filter, status: "rejected" }),
-      Order.countDocuments({ ...filter, orderDate: { $gte: startOfToday } }),
+      Order.countDocuments({ ...filter, type: "order" }),
+      Order.countDocuments({ ...filter, type: "visit" }),
+      Order.countDocuments({ ...filter, type: "order", status: "pending" }),
+      Order.countDocuments({ ...filter, type: "order", status: "approved" }),
+      Order.countDocuments({ ...filter, type: "order", status: "completed" }),
+      Order.countDocuments({ ...filter, type: "order", status: "rejected" }),
+      Order.countDocuments({ ...filter, type: "order", orderDate: { $gte: startOfToday } }),
+      Order.countDocuments({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }),
       Order.aggregate([
         {
           $match: {
+            type: "order",
             orderDate: { $gte: startOfMonth },
             ...(filter.godown ? { godown: filter.godown } : {}),
+            ...(filter.createdBy ? { createdBy: filter.createdBy } : {}),
+            ...(filter['driverAssignment.driver'] ? { 'driverAssignment.driver': filter['driverAssignment.driver'] } : {}),
           },
         },
         { $group: { _id: null, total: { $sum: "$totalAmount" } } },
@@ -1482,11 +1489,13 @@ class OrderService {
       success: true,
       data: {
         totalOrders,
+        totalVisits,
         pendingOrders,
         approvedOrders,
         completedOrders,
         rejectedOrders,
         todayOrders,
+        todayVisits,
         monthlyRevenue,
       },
     };
