@@ -42,6 +42,16 @@ const router = express.Router();
  *         schema:
  *           type: boolean
  *         description: Filter by active status
+ *       - in: query
+ *         name: state
+ *         schema:
+ *           type: string
+ *         description: Filter by state
+ *       - in: query
+ *         name: city
+ *         schema:
+ *           type: string
+ *         description: Filter by city (partial match)
  *     responses:
  *       200:
  *         description: Customers retrieved successfully

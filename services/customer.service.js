@@ -10,6 +10,8 @@ class CustomerService {
       search = '',
       customerType = '',
       isActive = '',
+      state = '',
+      city = '',
       sortBy = 'createdAt',
       sortOrder = 'desc'
     } = query;
@@ -34,6 +36,14 @@ class CustomerService {
       filter.isActive = isActive === 'true';
     }
 
+    if (state) {
+      filter['address.state'] = state;
+    }
+
+    if (city) {
+      filter['address.city'] = { $regex: city, $options: 'i' };
+    }
+
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
@@ -55,15 +65,15 @@ class CustomerService {
     return {
       success: true,
       data: {
-        customers,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages,
-          totalCustomers,
-          limit: parseInt(limit),
-          hasNext: parseInt(page) < totalPages,
-          hasPrev: parseInt(page) > 1
-        }
+        customers
+      },
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalRecords: totalCustomers,
+        limit: parseInt(limit),
+        hasNext: parseInt(page) < totalPages,
+        hasPrev: parseInt(page) > 1
       }
     };
   }
