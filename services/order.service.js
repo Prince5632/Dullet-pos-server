@@ -7,6 +7,7 @@ const {
   getProductsForGodowns,
   getProductsForGodown,
 } = require("../config/pricing.config");
+const { default: mongoose } = require("mongoose");
 
 class OrderService {
   // Get all orders with pagination and filtering
@@ -1450,6 +1451,7 @@ class OrderService {
         }
       }
     }
+    console.log(filter);
 
     const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
     const startOfMonth = new Date(
@@ -1490,7 +1492,7 @@ class OrderService {
           $match: {
             type: "order",
             orderDate: { $gte: startOfMonth },
-            ...(filter.godown ? { godown: filter.godown } : {}),
+            ...(filter.godown ? { godown: new mongoose.Types.ObjectId(filter.godown) } : {}),
             ...(filter.createdBy ? { createdBy: filter.createdBy } : {}),
             ...(filter["driverAssignment.driver"]
               ? { "driverAssignment.driver": filter["driverAssignment.driver"] }
