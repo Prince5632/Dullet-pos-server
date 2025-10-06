@@ -34,7 +34,8 @@ const userSchema = new mongoose.Schema({
   phone: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    sparse: true
   },
   password: {
     type: String,
@@ -201,8 +202,44 @@ userSchema.pre('save', async function(next) {
 // Pre-save middleware to generate employee ID
 userSchema.pre('save', async function(next) {
   if (!this.employeeId && this.isNew) {
-    const count = await mongoose.model('User').countDocuments();
-    this.employeeId = `EMP${(count + 1).toString().padStart(4, '0')}`;
+    try {
+      // Find the highest existing employee ID to ensure uniqueness
+      const lastUser = await mongoose.model('User')
+        .findOne({ employeeId: { $exists: true, $ne: null } })
+        .sort({ employeeId: -1 })
+        .select('employeeId')
+        .lean();
+      
+      let nextNumber = 1;
+      if (lastUser && lastUser.employeeId) {
+        // Extract number from employeeId (e.g., "EMP0001" -> 1)
+        const match = lastUser.employeeId.match(/EMP(\d+)/);
+        if (match) {
+          nextNumber = parseInt(match[1]) + 1;
+        }
+      }
+      
+      // Keep trying until we find a unique ID (in case of race conditions)
+      let attempts = 0;
+      while (attempts < 10) {
+        const candidateId = `EMP${nextNumber.toString().padStart(4, '0')}`;
+        const existing = await mongoose.model('User').findOne({ employeeId: candidateId }).lean();
+        
+        if (!existing) {
+          this.employeeId = candidateId;
+          break;
+        }
+        
+        nextNumber++;
+        attempts++;
+      }
+      
+      if (!this.employeeId) {
+        throw new Error('Unable to generate unique employee ID after multiple attempts');
+      }
+    } catch (error) {
+      return next(error);
+    }
   }
   next();
 });

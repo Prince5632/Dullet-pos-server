@@ -146,7 +146,7 @@ const createUser = async (req, res) => {
       const field = Object.keys(error.keyValue)[0];
       return res.status(400).json({
         success: false,
-        message: `${field === 'email' ? 'Email' : 'Phone'} already exists`
+        message: `${field} already exists`
       });
     }
 
