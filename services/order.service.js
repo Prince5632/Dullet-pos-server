@@ -1544,6 +1544,7 @@ class OrderService {
       paymentStatus: inputPaymentStatus,
       capturedImage,
       captureLocation,
+      godown,
     } = quickData || {};
     items = typeof items === "string" ? JSON.parse(items) : items;
     // Validate customer exists and active
@@ -1644,6 +1645,7 @@ class OrderService {
       paymentStatus,
       capturedImage,
       captureLocation,
+      godown,
     };
 
     // Reuse standard creation flow for validations, numbering and auditing
