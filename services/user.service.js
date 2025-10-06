@@ -304,13 +304,12 @@ const createUser = async (userData, createdBy) => {
     const saved = await saveProfilePhoto(profilePhoto, email, profilePhotoMimeType);
     profilePhotoPath = saved?.url || null;
   }
-
   // Create user object
   const newUserData = {
     firstName: firstName.trim(),
     lastName: lastName.trim(),
-    email: email ? email.toLowerCase().trim() : undefined,
-    username: username ? username.toLowerCase().trim() : undefined,
+    ...(email ? { email: email?.toLowerCase()?.trim() } : {}),
+    ...(username ? { username: username?.toLowerCase()?.trim() } : {}),
     phone: phone.trim(),
     password,
     role: roleId,
@@ -398,7 +397,8 @@ const updateUser = async (userId, updateData, updatedBy) => {
   const oldValues = {
     firstName: existingUser.firstName,
     lastName: existingUser.lastName,
-    email: existingUser.email,
+    ...(existingUser.email ? { email: existingUser.email?.toLowerCase()?.trim() } : {}),
+    ...(existingUser.username ? { username: existingUser.username?.toLowerCase()?.trim() } : {}),
     phone: existingUser.phone,
     department: existingUser.department,
     position: existingUser.position,

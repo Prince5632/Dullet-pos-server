@@ -29,6 +29,7 @@ const userSchema = new mongoose.Schema({
     required: false,
     unique: true,
     lowercase: true,
+    sparse: true,
     trim: true
   },
   phone: {
