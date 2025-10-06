@@ -1646,6 +1646,7 @@ class OrderService {
 
       return {
         productName: product.name,
+        isBagSelection: it.isBagSelection,
         grade: "",
         quantity: quantityKg,
         unit: "KG",

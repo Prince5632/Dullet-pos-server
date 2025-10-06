@@ -35,7 +35,11 @@ const orderItemSchema = new mongoose.Schema({
     type: String,
     enum: ['Standard', 'Custom', '5kg Bags', '10kg Bags', '25kg Bags', '50kg Bags', '40kg Bag', 'Loose'],
     default: 'Standard'
-  }
+  },
+  isBagSelection: {
+    type: Boolean,
+    default: false
+  },
 });
 
 const orderSchema = new mongoose.Schema({
