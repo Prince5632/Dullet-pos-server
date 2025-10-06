@@ -115,6 +115,11 @@ const customerSchema = new mongoose.Schema({
   notes: {
     type: String,
     default: ''
+  },
+  assignedGodownId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Godown',
+    required: false
   }
 }, {
   timestamps: true
