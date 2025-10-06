@@ -21,7 +21,10 @@ const QUICK_PRODUCT_BASES = [
 const CITY_CONFIG = {
   'ludhiana': { productKey: 'family_atta', pricePerKg: 32.0 },
   'jalandhar': { productKey: 'family_atta', pricePerKg: 32.5 },
-  'ambala': { productKey: 'family_atta', pricePerKg: 33.0 },
+  'ambala': [
+    { productKey: 'family_atta', pricePerKg: 33.0 },
+    { productKey: 'all_pure', pricePerKg: 35.5 }
+  ],
   'fatehgarh sahib': { productKey: 'family_atta', pricePerKg: 32.0 },
   'delhi': { productKey: 'all_pure', pricePerKg: 35.0 },
   'jammu': { productKey: 'all_pure', pricePerKg: 35.5 },
@@ -36,11 +39,8 @@ const CITY_TOKENS = {
   'jammu': ['jammu'],
 };
 
-function buildProduct(baseKey, cityKey) {
+function buildProduct(baseKey, cityKey, pricePerKg = null) {
   const normalizedCity = cityKey.split(':')[0];
-  const config = CITY_CONFIG[normalizedCity];
-  if (!config || config.productKey !== baseKey) return null;
-
   const base = QUICK_PRODUCT_BASES.find(p => p.key === baseKey);
   if (!base) return null;
 
@@ -48,7 +48,7 @@ function buildProduct(baseKey, cityKey) {
     ...base,
     key: `${baseKey}_${normalizedCity.replace(/\s+/g, '_')}`,
     name: base.name,
-    pricePerKg: config.pricePerKg,
+    pricePerKg: pricePerKg || 0,
     cityTokens: CITY_TOKENS[normalizedCity] || [normalizedCity],
   };
 }
@@ -57,8 +57,19 @@ function getProductsForGodown(godown) {
   const city = (godown?.location?.city || '').toLowerCase();
   const config = CITY_CONFIG[city];
   if (!config) return [];
-  const product = buildProduct(config.productKey, city);
-  return product ? [product] : [];
+  
+  // Handle both single product and multiple products per city
+  const configs = Array.isArray(config) ? config : [config];
+  const products = [];
+  
+  configs.forEach(cfg => {
+    const product = buildProduct(cfg.productKey, city, cfg.pricePerKg);
+    if (product) {
+      products.push(product);
+    }
+  });
+  
+  return products;
 }
 
 function getProductsForGodowns(godowns = []) {
