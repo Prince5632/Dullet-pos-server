@@ -140,11 +140,11 @@ class OrderService {
     ) {
       // Role-based filtering
       const roleName = currentUser.role.name;
-      
-      if (roleName === 'Driver') {
+
+      if (roleName === "Driver") {
         // Drivers can only see orders assigned to them
-        filter['driverAssignment.driver'] = currentUser._id;
-      } else if (['Sales Executive', 'Staff'].includes(roleName)) {
+        filter["driverAssignment.driver"] = currentUser._id;
+      } else if (["Sales Executive", "Staff"].includes(roleName)) {
         // Sales Executive and Staff: only show their own created orders
         filter.createdBy = currentUser._id;
       } else {
@@ -350,7 +350,7 @@ class OrderService {
     // Determine resource type based on order type
     const resourceType = order.type === "visit" ? "Visit" : "Order";
     const resourceName = order.type === "visit" ? "visit" : "order";
-    
+
     // Build a richer description when payment fields changed
     let description = `Updated ${resourceName}: ${order.orderNumber}`;
     const changes = [];
@@ -658,7 +658,13 @@ class OrderService {
     };
   }
 
-  async assignDriver(orderId, driverId, assignedBy, notes = "", vehicleNumber = "") {
+  async assignDriver(
+    orderId,
+    driverId,
+    assignedBy,
+    notes = "",
+    vehicleNumber = ""
+  ) {
     const { User } = require("../models");
 
     const user = await User.findById(assignedBy).populate("role");
@@ -1342,11 +1348,11 @@ class OrderService {
     ) {
       // Role-based filtering
       const roleName = currentUser.role.name;
-      
-      if (roleName === 'Driver') {
+
+      if (roleName === "Driver") {
         // Drivers can only see orders assigned to them
-        filter['driverAssignment.driver'] = currentUser._id;
-      } else if (['Sales Executive', 'Staff'].includes(roleName)) {
+        filter["driverAssignment.driver"] = currentUser._id;
+      } else if (["Sales Executive", "Staff"].includes(roleName)) {
         // Sales Executive and Staff: only show their own orders
         filter.createdBy = currentUser._id;
       } else {
@@ -1421,11 +1427,11 @@ class OrderService {
     ) {
       // Role-based filtering
       const roleName = currentUser.role.name;
-      
-      if (roleName === 'Driver') {
+
+      if (roleName === "Driver") {
         // Drivers can only see stats for orders assigned to them
-        filter['driverAssignment.driver'] = currentUser._id;
-      } else if (['Sales Executive', 'Staff'].includes(roleName)) {
+        filter["driverAssignment.driver"] = currentUser._id;
+      } else if (["Sales Executive", "Staff"].includes(roleName)) {
         // Sales Executive and Staff: only show their own order stats
         filter.createdBy = currentUser._id;
       } else {
@@ -1469,8 +1475,16 @@ class OrderService {
       Order.countDocuments({ ...filter, type: "order", status: "approved" }),
       Order.countDocuments({ ...filter, type: "order", status: "completed" }),
       Order.countDocuments({ ...filter, type: "order", status: "rejected" }),
-      Order.countDocuments({ ...filter, type: "order", orderDate: { $gte: startOfToday } }),
-      Order.countDocuments({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }),
+      Order.countDocuments({
+        ...filter,
+        type: "order",
+        orderDate: { $gte: startOfToday },
+      }),
+      Order.countDocuments({
+        ...filter,
+        type: "visit",
+        orderDate: { $gte: startOfToday },
+      }),
       Order.aggregate([
         {
           $match: {
@@ -1478,7 +1492,9 @@ class OrderService {
             orderDate: { $gte: startOfMonth },
             ...(filter.godown ? { godown: filter.godown } : {}),
             ...(filter.createdBy ? { createdBy: filter.createdBy } : {}),
-            ...(filter['driverAssignment.driver'] ? { 'driverAssignment.driver': filter['driverAssignment.driver'] } : {}),
+            ...(filter["driverAssignment.driver"]
+              ? { "driverAssignment.driver": filter["driverAssignment.driver"] }
+              : {}),
           },
         },
         { $group: { _id: null, total: { $sum: "$totalAmount" } } },
@@ -1515,12 +1531,16 @@ class OrderService {
       }
 
       if (godownIds.length > 0) {
-        godowns = await Godown.find({ _id: { $in: godownIds } }).select('location city name');
+        godowns = await Godown.find({ _id: { $in: godownIds } }).select(
+          "location city name"
+        );
       }
     }
 
     if (!godowns.length) {
-      godowns = await Godown.find({ isActive: true }).select('location city name');
+      godowns = await Godown.find({ isActive: true }).select(
+        "location city name"
+      );
     }
 
     const products = getProductsForGodowns(godowns);
@@ -1561,20 +1581,25 @@ class OrderService {
     }
 
     const userGodowns = [];
-    const creator = await require("../models").User.findById(createdBy).populate('primaryGodown accessibleGodowns');
+    const creator = await require("../models")
+      .User.findById(createdBy)
+      .populate("primaryGodown accessibleGodowns");
     if (creator?.primaryGodown) userGodowns.push(creator.primaryGodown);
-    if (Array.isArray(creator?.accessibleGodowns)) userGodowns.push(...creator.accessibleGodowns);
+    if (Array.isArray(creator?.accessibleGodowns))
+      userGodowns.push(...creator.accessibleGodowns);
 
     let pricingGodown = null;
     if (quickData.godown) {
-      pricingGodown = await Godown.findById(quickData.godown).select('location city name');
+      pricingGodown = await Godown.findById(quickData.godown).select(
+        "location city name"
+      );
     }
     if (!pricingGodown && userGodowns.length > 0) {
       pricingGodown = userGodowns[0];
     }
 
     if (!pricingGodown) {
-      throw new Error('Unable to determine godown for pricing');
+      throw new Error("Unable to determine godown for pricing");
     }
 
     const availableProducts = getProductsForGodown(pricingGodown);
@@ -1584,21 +1609,31 @@ class OrderService {
     }, {});
 
     if (!Array.isArray(items) || items.length === 0) {
-      throw new Error('At least one item is required');
+      throw new Error("At least one item is required");
     }
 
     const orderItems = items.map((it, idx) => {
       const product = productMap[it.productKey];
       if (!product) {
-        throw new Error(`Product ${it.productKey} is not available for the selected godown`);
+        throw new Error(
+          `Product ${it.productKey} is not available for the selected godown`
+        );
       }
       // Determine quantity in KG
       let quantityKg = 0;
       if (typeof it.quantityKg === "number" && it.quantityKg > 0) {
         quantityKg = it.quantityKg;
-      } else if (typeof it.bags === "number" && it.bags > 0 && product.bagSizeKg) {
+      } else if (
+        typeof it.bags === "number" &&
+        it.bags > 0 &&
+        product.bagSizeKg
+      ) {
         quantityKg = it.bags * product.bagSizeKg;
-      } else if (typeof it.bagPieces === "number" && it.bagPieces > 0 && product.bagSizeKg) {
+      } else if (
+        typeof it.bagPieces === "number" &&
+        it.bagPieces > 0 &&
+        product.bagSizeKg
+      ) {
         quantityKg = it.bagPieces * product.bagSizeKg;
       } else {
         throw new Error(`Quantity missing or invalid for item ${idx + 1}`);
@@ -1696,9 +1731,12 @@ class OrderService {
       subtotal: 0,
       totalAmount: 0,
     });
+    if (customer.assignedGodownId) {
+      visit.godown = customer.assignedGodownId;
+    }
 
     // If no godown explicitly provided, infer from user's primary
-    if (!visit.godown) {
+    if (!visit.godown && !customer.assignedGodownId) {
       try {
         const creator = await require("../models").User.findById(createdBy);
         if (creator?.primaryGodown) {
@@ -1733,18 +1771,21 @@ class OrderService {
     // First check if order exists
     const order = await Order.findById(orderId);
     if (!order) {
-      throw new Error('Order not found');
+      throw new Error("Order not found");
     }
 
     // Calculate skip value for pagination
     const skip = (page - 1) * limit;
 
     // Get audit trail for this order with pagination
-    const result = await AuditLog.getResourceAuditTrail('Order', orderId, { limit, skip });
+    const result = await AuditLog.getResourceAuditTrail("Order", orderId, {
+      limit,
+      skip,
+    });
 
     return {
       success: true,
-      message: 'Order audit trail retrieved successfully',
+      message: "Order audit trail retrieved successfully",
       data: {
         activities: result.logs,
         pagination: {
@@ -1752,34 +1793,37 @@ class OrderService {
           totalItems: result.total,
           itemsPerPage: limit,
           totalPages: Math.ceil(result.total / limit),
-          hasMore: result.hasMore
-        }
-      }
+          hasMore: result.hasMore,
+        },
+      },
     };
   }
 
   async getVisitAuditTrail(visitId, options = {}) {
     const { page = 1, limit = 10 } = options;
-    
+
     // First check if visit exists and is of type 'visit'
     const visit = await Order.findById(visitId);
     if (!visit) {
-      throw new Error('Visit not found');
+      throw new Error("Visit not found");
     }
-    
-    if (visit.type !== 'visit') {
-      throw new Error('Invalid resource type - not a visit');
+
+    if (visit.type !== "visit") {
+      throw new Error("Invalid resource type - not a visit");
     }
 
     // Calculate skip value for pagination
     const skip = (page - 1) * limit;
 
     // Get audit trail for this visit with pagination
-    const result = await AuditLog.getResourceAuditTrail('Visit', visitId, { limit, skip });
+    const result = await AuditLog.getResourceAuditTrail("Visit", visitId, {
+      limit,
+      skip,
+    });
 
     return {
       success: true,
-      message: 'Visit audit trail retrieved successfully',
+      message: "Visit audit trail retrieved successfully",
       data: {
         activities: result.logs,
         pagination: {
@@ -1787,9 +1831,9 @@ class OrderService {
           totalItems: result.total,
           itemsPerPage: limit,
           totalPages: Math.ceil(result.total / limit),
-          hasMore: result.hasMore
-        }
-      }
+          hasMore: result.hasMore,
+        },
+      },
     };
   }
 }
