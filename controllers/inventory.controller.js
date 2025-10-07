@@ -138,6 +138,29 @@ const getInventoryByGodown = async (req, res) => {
   }
 };
 
+// Get inventory audit trail
+const getInventoryAuditTrail = async (req, res) => {
+  try {
+    const result = await inventoryService.getInventoryAuditTrail(
+      req.params.id,
+      req.query
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    if (error.message === "Inventory record not found") {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+};
+
 module.exports = {
   getAllInventory,
   getInventoryById,
@@ -146,4 +169,5 @@ module.exports = {
   deleteInventory,
   getInventoryStats,
   getInventoryByGodown,
+  getInventoryAuditTrail,
 };

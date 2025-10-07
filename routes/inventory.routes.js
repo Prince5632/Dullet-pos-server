@@ -356,4 +356,46 @@ router.get('/stats/summary', authenticate, authorize('stock.read'), inventoryCon
  */
 router.get('/godown/:godownId', authenticate, authorize('stock.read'), inventoryController.getInventoryByGodown);
 
+/**
+ * @swagger
+ * /api/inventory/{id}/audit-trail:
+ *   get:
+ *     summary: Get inventory audit trail
+ *     description: Retrieve the audit trail for a specific inventory record
+ *     tags: [Inventory Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Inventory record ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of activities per page
+ *     responses:
+ *       200:
+ *         description: Inventory audit trail retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Inventory record not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/:id/audit-trail', authenticate, authorize('stock.read'), inventoryController.getInventoryAuditTrail);
+
 module.exports = router;

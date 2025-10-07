@@ -364,6 +364,41 @@ class InventoryService {
       },
     };
   }
+
+  // Get inventory audit trail
+  async getInventoryAuditTrail(inventoryId, options = {}) {
+    const { page = 1, limit = 10 } = options;
+
+    // First check if inventory exists
+    const inventory = await Inventory.findById(inventoryId);
+    if (!inventory) {
+      throw new Error("Inventory record not found");
+    }
+
+    // Calculate skip value for pagination
+    const skip = (page - 1) * limit;
+
+    // Get audit trail for this inventory with pagination
+    const result = await AuditLog.getResourceAuditTrail("Inventory", inventoryId, {
+      limit,
+      skip,
+    });
+
+    return {
+      success: true,
+      message: "Inventory audit trail retrieved successfully",
+      data: {
+        activities: result.logs,
+        pagination: {
+          currentPage: page,
+          totalItems: result.total,
+          itemsPerPage: limit,
+          totalPages: Math.ceil(result.total / limit),
+          hasMore: result.hasMore,
+        },
+      },
+    };
+  }
 }
 
 module.exports = new InventoryService();
