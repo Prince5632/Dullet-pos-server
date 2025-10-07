@@ -1,4 +1,5 @@
 const { Attendance, User, Godown } = require('../models');
+const mongoose = require('mongoose');
 
 // Helper to safely get an id string from either a populated document or ObjectId
 const getIdString = (maybeDocOrId) => {
@@ -59,7 +60,7 @@ class AttendanceService {
 
     // Apply additional filters
     if (userId) filters.user = userId;
-    if (godownId) filters.godown = godownId;
+    if (godownId) filters.godown = new mongoose.Types.ObjectId(godownId);
     if (status) filters.status = status;
     
     if (startDate || endDate) {
@@ -391,7 +392,7 @@ class AttendanceService {
       }
     }
 
-    if (godownId) filters.godown = godownId;
+    if (godownId) filters.godown = new mongoose.Types.ObjectId(godownId);
     
     if (startDate || endDate) {
       filters.date = {};

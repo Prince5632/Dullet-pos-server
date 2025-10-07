@@ -51,7 +51,7 @@ class OrderService {
     }
 
     if (customerId) {
-      filter.customer = customerId;
+      filter.customer = new mongoose.Types.ObjectId(customerId);
     }
 
     if (type) {
@@ -133,7 +133,7 @@ class OrderService {
 
     // Scope by godown if provided in query or by user's accessible godowns
     if (query.godownId) {
-      filter.godown = query.godownId;
+      filter.godown = new mongoose.Types.ObjectId(query.godownId);
     } else if (
       currentUser &&
       currentUser.role &&
@@ -1415,13 +1415,73 @@ class OrderService {
     };
   }
 
-  // Get order statistics (supports optional godown scoping)
+  // Get order statistics (supports optional godown scoping and all order filters)
   async getOrderStats(query = {}, currentUser) {
+    const {
+      search = "",
+      status = "",
+      paymentStatus = "",
+      customerId = "",
+      dateFrom = "",
+      dateTo = "",
+      priority = "",
+      minAmount = "",
+      maxAmount = "",
+      godownId = "",
+    } = query;
+
     const filter = {};
     
+    // Apply search filter
+    if (search) {
+      filter.$or = [{ orderNumber: { $regex: search, $options: "i" } }];
+    }
+
+    // Apply status filter
+    if (status) {
+      filter.status = status;
+    }
+
+    // Apply payment status filter
+    if (paymentStatus) {
+      filter.paymentStatus = paymentStatus;
+    }
+
+    // Apply customer filter
+    if (customerId) {
+      filter.customer = new mongoose.Types.ObjectId(customerId);
+    }
+
+    // Apply priority filter
+    if (priority) {
+      filter.priority = priority;
+    }
+
+    // Apply amount range filter
+    if (minAmount || maxAmount) {
+      filter.totalAmount = {};
+      if (minAmount) {
+        filter.totalAmount.$gte = parseFloat(minAmount);
+      }
+      if (maxAmount) {
+        filter.totalAmount.$lte = parseFloat(maxAmount);
+      }
+    }
+
+    // Apply date range filter
+    if (dateFrom || dateTo) {
+      filter.orderDate = {};
+      if (dateFrom) {
+        filter.orderDate.$gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        filter.orderDate.$lte = new Date(dateTo);
+      }
+    }
+    
     // Priority 1: If godownId is provided and not empty, use it
-    if (query.godownId && query.godownId !== "") {
-      filter.godown = new mongoose.Types.ObjectId(query.godownId);
+    if (godownId && godownId !== "") {
+      filter.godown = new mongoose.Types.ObjectId(godownId);
     } else if (currentUser && currentUser.role) {
       // Role-based filtering for non-super admins
       const roleName = currentUser.role.name;

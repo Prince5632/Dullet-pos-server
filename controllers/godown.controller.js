@@ -1,5 +1,6 @@
 const godownService = require('../services/godown.service');
 const { Order } = require('../models');
+const mongoose = require('mongoose');
 
 const createGodown = async (req, res) => {
   try {
@@ -39,9 +40,83 @@ const getGodowns = async (req, res) => {
     let visitCountsMap = {}; // [memory:1][memory:2]
 
     if (godownIds.length > 0) {
-      // Aggregate order counts
+      // Build filter for counting based on query parameters
+      const countFilter = { godown: { $in: godownIds } };
+      
+      // Apply search filter
+      if (req.query.search) {
+        countFilter.$or = [{ orderNumber: { $regex: req.query.search, $options: "i" } }];
+      }
+
+      // Apply status filter
+      if (req.query.status) {
+        countFilter.status = req.query.status;
+      }
+
+      // Apply payment status filter
+      if (req.query.paymentStatus) {
+        countFilter.paymentStatus = req.query.paymentStatus;
+      }
+
+      // Apply customer filter
+      if (req.query.customerId) {
+        countFilter.customer = new mongoose.Types.ObjectId(req.query.customerId);
+      }
+
+      // Apply priority filter
+      if (req.query.priority) {
+        countFilter.priority = req.query.priority;
+      }
+
+      // Apply amount range filter
+      if (req.query.minAmount || req.query.maxAmount) {
+        countFilter.totalAmount = {};
+        if (req.query.minAmount) {
+          countFilter.totalAmount.$gte = parseFloat(req.query.minAmount);
+        }
+        if (req.query.maxAmount) {
+          countFilter.totalAmount.$lte = parseFloat(req.query.maxAmount);
+        }
+      }
+
+      // Apply date range filter
+      if (req.query.dateFrom || req.query.dateTo) {
+        countFilter.orderDate = {};
+        if (req.query.dateFrom) {
+          countFilter.orderDate.$gte = new Date(req.query.dateFrom);
+        }
+        if (req.query.dateTo) {
+          countFilter.orderDate.$lte = new Date(req.query.dateTo);
+        }
+      }
+
+      // Apply visit-specific filters
+      if (req.query.scheduleStatus) {
+        countFilter.scheduleStatus = req.query.scheduleStatus;
+      }
+
+      if (req.query.visitStatus) {
+        countFilter.visitStatus = req.query.visitStatus;
+      }
+
+      if (req.query.hasImage) {
+        if (req.query.hasImage === 'true') {
+          countFilter.capturedImage = { $exists: true, $ne: null };
+        } else if (req.query.hasImage === 'false') {
+          countFilter.$or = [
+            { capturedImage: { $exists: false } },
+            { capturedImage: null }
+          ];
+        }
+      }
+
+      if (req.query.address) {
+        countFilter['captureLocation.address'] = { $regex: req.query.address, $options: "i" };
+      }
+
+      // Aggregate order counts with filters
       const orderCounts = await Order.aggregate([
-        { $match: { godown: { $in: godownIds }, type: 'order' } },
+        { $match: { ...countFilter, type: 'order' } },
         { $group: { _id: '$godown', count: { $sum: 1 } } }
       ]); // [memory:1][memory:2]
 
@@ -50,9 +125,9 @@ const getGodowns = async (req, res) => {
         return acc;
       }, {}); // [memory:1]
 
-      // Aggregate visit counts
+      // Aggregate visit counts with filters
       const visitCounts = await Order.aggregate([
-        { $match: { godown: { $in: godownIds }, type: 'visit' } },
+        { $match: { ...countFilter, type: 'visit' } },
         { $group: { _id: '$godown', count: { $sum: 1 } } }
       ]); // [memory:1][memory:2]
 
