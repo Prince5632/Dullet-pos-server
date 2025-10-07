@@ -7,6 +7,7 @@ const Customer = require('./customer.schema');
 const Order = require('./order.schema');
 const Godown = require('./godown.schema');
 const Attendance = require('./attendance.schema');
+const Inventory = require('./inventory.schema');
 
 module.exports = {
   User,
@@ -17,7 +18,8 @@ module.exports = {
   Customer,
   Order,
   Godown,
-  Attendance
+  Attendance,
+  Inventory
 };
 
 // Helper to seed core defaults where available

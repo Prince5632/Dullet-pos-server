@@ -1,5 +1,5 @@
 const godownService = require('../services/godown.service');
-const { Order } = require('../models');
+const { Order, Inventory } = require('../models');
 const mongoose = require('mongoose');
 
 const createGodown = async (req, res) => {
@@ -38,6 +38,7 @@ const getGodowns = async (req, res) => {
     // Prepare maps
     let orderCountsMap = {};
     let visitCountsMap = {}; // [memory:1][memory:2]
+    let inventoryCountsMap = {};
 
     if (godownIds.length > 0) {
       // Build filter for counting based on query parameters
@@ -135,12 +136,24 @@ const getGodowns = async (req, res) => {
         acc[c._id.toString()] = c.count;
         return acc;
       }, {}); // [memory:1]
+
+      // Aggregate inventory counts
+      const inventoryCounts = await Inventory.aggregate([
+        { $match: { godown: { $in: godownIds } } },
+        { $group: { _id: '$godown', count: { $sum: 1 } } }
+      ]);
+
+      inventoryCountsMap = inventoryCounts.reduce((acc, c) => {
+        acc[c._id.toString()] = c.count;
+        return acc;
+      }, {});
     }
 
     const godownsWithCounts = godowns.map(g => ({
       ...g,
       orderCount: orderCountsMap[g._id.toString()] || 0,
-      visitCount: visitCountsMap[g._id.toString()] || 0
+      visitCount: visitCountsMap[g._id.toString()] || 0,
+      inventoryCount: inventoryCountsMap[g._id.toString()] || 0
     })); // [memory:1]
 
     res.status(200).json({ success: true, data: { godowns: godownsWithCounts } }); // [memory:1]
