@@ -10,8 +10,14 @@ exports.getSalesExecutiveReports = async (req, res) => {
     const { startDate, endDate, userId, sortBy = 'totalRevenue', sortOrder = 'desc', department, godownId, type } = req.query;
 
     const filters = {};
-    if (startDate && endDate) {
-      filters.dateRange = { startDate: new Date(startDate), endDate: new Date(endDate) };
+    if (startDate || endDate) {
+      filters.dateRange = {};
+      if (startDate) {
+        filters.dateRange.startDate = new Date(startDate);
+      }
+      if (endDate) {
+        filters.dateRange.endDate = new Date(endDate);
+      }
     }
     if (userId) {
       filters.userId = userId;
@@ -43,8 +49,14 @@ exports.getGodownSalesReports = async (req, res) => {
     const { startDate, endDate, sortBy = 'totalRevenue', sortOrder = 'desc' } = req.query;
 
     const filters = {};
-    if (startDate && endDate) {
-      filters.dateRange = { startDate: new Date(startDate), endDate: new Date(endDate) };
+    if (startDate || endDate) {
+      filters.dateRange = {};
+      if (startDate) {
+        filters.dateRange.startDate = new Date(startDate);
+      }
+      if (endDate) {
+        filters.dateRange.endDate = new Date(endDate);
+      }
     }
 
     const report = await reportService.getGodownSalesReports(filters, sortBy, sortOrder);
@@ -72,8 +84,14 @@ exports.getCustomerReports = async (req, res) => {
     } = req.query;
 
     const filters = {};
-    if (startDate && endDate) {
-      filters.dateRange = { startDate: new Date(startDate), endDate: new Date(endDate) };
+    if (startDate || endDate) {
+      filters.dateRange = {};
+      if (startDate) {
+        filters.dateRange.startDate = new Date(startDate);
+      }
+      if (endDate) {
+        filters.dateRange.endDate = new Date(endDate);
+      }
     }
     if (customerId) {
       filters.customerId = customerId;
@@ -118,8 +136,14 @@ exports.getExecutivePerformanceDetail = async (req, res) => {
     const { startDate, endDate, type } = req.query;
 
     const filters = {};
-    if (startDate && endDate) {
-      filters.dateRange = { startDate: new Date(startDate), endDate: new Date(endDate) };
+    if (startDate || endDate) {
+      filters.dateRange = {};
+      if (startDate) {
+        filters.dateRange.startDate = new Date(startDate);
+      }
+      if (endDate) {
+        filters.dateRange.endDate = new Date(endDate);
+      }
     }
     if (type) {
       filters.type = type;
@@ -144,8 +168,14 @@ exports.getCustomerPurchaseDetail = async (req, res) => {
     const { startDate, endDate } = req.query;
 
     const filters = {};
-    if (startDate && endDate) {
-      filters.dateRange = { startDate: new Date(startDate), endDate: new Date(endDate) };
+    if (startDate || endDate) {
+      filters.dateRange = {};
+      if (startDate) {
+        filters.dateRange.startDate = new Date(startDate);
+      }
+      if (endDate) {
+        filters.dateRange.endDate = new Date(endDate);
+      }
     }
 
     const detail = await reportService.getCustomerPurchaseDetail(customerId, filters);

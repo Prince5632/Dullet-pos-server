@@ -16,11 +16,14 @@ exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue',
       status: { $nin: ['cancelled', 'rejected'] } 
     };
     
-    if (dateRange && dateRange.startDate && dateRange.endDate) {
-      matchCriteria.orderDate = {
-        $gte: dateRange.startDate,
-        $lte: dateRange.endDate
-      };
+    if (dateRange && (dateRange.startDate || dateRange.endDate)) {
+      matchCriteria.orderDate = {};
+      if (dateRange.startDate) {
+        matchCriteria.orderDate.$gte = dateRange.startDate;
+      }
+      if (dateRange.endDate) {
+        matchCriteria.orderDate.$lte = dateRange.endDate;
+      }
     }
 
     if (userId) {
@@ -156,11 +159,14 @@ exports.getGodownSalesReports = async (filters = {}, sortBy = 'totalRevenue', so
 
     const matchCriteria = { type: 'order', status: { $nin: ['cancelled', 'rejected'] } };
 
-    if (dateRange && dateRange.startDate && dateRange.endDate) {
-      matchCriteria.orderDate = {
-        $gte: dateRange.startDate,
-        $lte: dateRange.endDate
-      };
+    if (dateRange && (dateRange.startDate || dateRange.endDate)) {
+      matchCriteria.orderDate = {};
+      if (dateRange.startDate) {
+        matchCriteria.orderDate.$gte = dateRange.startDate;
+      }
+      if (dateRange.endDate) {
+        matchCriteria.orderDate.$lte = dateRange.endDate;
+      }
     }
 
     const reports = await Order.aggregate([
@@ -222,11 +228,14 @@ exports.getCustomerReports = async (filters = {}, sortBy = 'totalSpent', sortOrd
     // Build match criteria
     const matchCriteria = { type: 'order', status: { $nin: ['cancelled', 'rejected'] } };
     
-    if (dateRange && dateRange.startDate && dateRange.endDate) {
-      matchCriteria.orderDate = {
-        $gte: dateRange.startDate,
-        $lte: dateRange.endDate
-      };
+    if (dateRange && (dateRange.startDate || dateRange.endDate)) {
+      matchCriteria.orderDate = {};
+      if (dateRange.startDate) {
+        matchCriteria.orderDate.$gte = dateRange.startDate;
+      }
+      if (dateRange.endDate) {
+        matchCriteria.orderDate.$lte = dateRange.endDate;
+      }
     }
 
     if (customerId) {
@@ -425,11 +434,14 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
       status: { $nin: ['cancelled', 'rejected'] }
     };
     
-    if (dateRange && dateRange.startDate && dateRange.endDate) {
-      matchCriteria.orderDate = {
-        $gte: dateRange.startDate,
-        $lte: dateRange.endDate
-      };
+    if (dateRange && (dateRange.startDate || dateRange.endDate)) {
+      matchCriteria.orderDate = {};
+      if (dateRange.startDate) {
+        matchCriteria.orderDate.$gte = dateRange.startDate;
+      }
+      if (dateRange.endDate) {
+        matchCriteria.orderDate.$lte = dateRange.endDate;
+      }
     }
 
     // Get orders
@@ -812,11 +824,14 @@ exports.getCustomerPurchaseDetail = async (customerId, filters = {}) => {
       status: { $nin: ['cancelled', 'rejected'] }
     };
     
-    if (dateRange && dateRange.startDate && dateRange.endDate) {
-      matchCriteria.orderDate = {
-        $gte: dateRange.startDate,
-        $lte: dateRange.endDate
-      };
+    if (dateRange && (dateRange.startDate || dateRange.endDate)) {
+      matchCriteria.orderDate = {};
+      if (dateRange.startDate) {
+        matchCriteria.orderDate.$gte = dateRange.startDate;
+      }
+      if (dateRange.endDate) {
+        matchCriteria.orderDate.$lte = dateRange.endDate;
+      }
     }
 
     // Get orders
