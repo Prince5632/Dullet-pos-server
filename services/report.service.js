@@ -438,55 +438,196 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
       .sort({ orderDate: -1 })
       .limit(100);
 
-    // Enrich recent orders with attaKg (normalized KG for atta items)
-    const attaNameRegex = /(atta|aata|wheat|flour|maida)/i;
+    // Enrich recent orders with attaKg (normalized KG for all items)
     const recentOrders = orders.map((doc) => {
       const order = doc.toObject();
       const items = Array.isArray(order.items) ? order.items : [];
       let totalKg = 0;
+      console.log(`Processing order ${order.orderNumber} with ${items.length} items`);
+      
       for (const item of items) {
-        const name = (item?.productName || '').toString();
-        if (!attaNameRegex.test(name)) continue;
-        const unit = item?.unit;
+        const name = (item?.productName || '').toString().trim();
+        const unit = (item?.unit || '').toString().trim();
         const quantity = Number(item?.quantity || 0);
-        let kg = 0;
-        if (unit === 'KG') kg = quantity;
-        else if (unit === 'Quintal') kg = quantity * 100;
-        else if (unit === 'Ton') kg = quantity * 1000;
-        else if (unit === 'Bags') {
-          const pack = item?.packaging;
-          let bagKg = pack === '5kg Bags' ? 5
-            : pack === '10kg Bags' ? 10
-            : pack === '25kg Bags' ? 25
-            : pack === '50kg Bags' ? 50
-            : 0;
-          if (!bagKg && typeof pack === 'string') {
-            const m = pack.match(/(\d+)\s*kg/i);
-            if (m) bagKg = Number(m[1]);
-          }
-          kg = quantity * bagKg;
+        
+        console.log(`Item: "${name}", Unit: "${unit}", Quantity: ${quantity}`);
+        
+        // Skip if no quantity
+        if (quantity <= 0) {
+          console.log(`Skipping item with invalid quantity: ${quantity}`);
+          continue;
         }
+        
+        let kg = 0;
+        
+        // Convert to KG based on unit
+        switch (unit.toUpperCase()) {
+          case 'KG':
+            kg = quantity;
+            break;
+          case 'QUINTAL':
+            kg = quantity * 100;
+            break;
+          case 'TON':
+            kg = quantity * 1000;
+            break;
+          case 'BAGS':
+            const pack = (item?.packaging || '').toString();
+            let bagKg = 0;
+            
+            // Try to extract weight from packaging string
+            if (pack) {
+              if (pack.includes('5kg') || pack.includes('5 kg')) bagKg = 5;
+              else if (pack.includes('10kg') || pack.includes('10 kg')) bagKg = 10;
+              else if (pack.includes('25kg') || pack.includes('25 kg')) bagKg = 25;
+              else if (pack.includes('40kg') || pack.includes('40 kg')) bagKg = 40;
+              else if (pack.includes('50kg') || pack.includes('50 kg')) bagKg = 50;
+              else {
+                // Try to extract number followed by kg
+                const match = pack.match(/(\d+)\s*kg/i);
+                if (match) bagKg = Number(match[1]);
+              }
+            }
+            
+            // Default bag weight if not specified (common 50kg bags for flour)
+            if (bagKg === 0) {
+              bagKg = 50; // Default assumption for flour bags
+              console.log(`Using default bag weight: ${bagKg}kg for packaging: "${pack}"`);
+            }
+            
+            kg = quantity * bagKg;
+            console.log(`Bags calculation: ${quantity} bags × ${bagKg}kg = ${kg}kg (packaging: "${pack}")`);
+            break;
+          default:
+            console.log(`Unknown unit: "${unit}", treating as KG`);
+            kg = quantity; // Default to treating as KG
+            break;
+        }
+        
+        console.log(`Item "${name}" contributes: ${kg}kg`);
         totalKg += kg;
       }
+      
       order.attaKg = Number(totalKg.toFixed(2));
+      console.log(`Order ${order.orderNumber} total attaKg: ${order.attaKg}`);
       return order;
     });
 
     // Get performance metrics
-    const metrics = await Order.aggregate([
-      { $match: matchCriteria },
-      {
-        $group: {
-          _id: null,
-          totalOrders: { $sum: 1 },
-          totalRevenue: { $sum: '$totalAmount' },
-          totalPaid: { $sum: '$paidAmount' },
-          avgOrderValue: { $avg: '$totalAmount' },
-          maxOrderValue: { $max: '$totalAmount' },
-          minOrderValue: { $min: '$totalAmount' }
+    let metrics;
+    if (type === 'visit') {
+      // Visit-specific metrics
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      // Get total visits today
+      const todayVisitsCount = await Order.countDocuments({
+        ...matchCriteria,
+        orderDate: { $gte: today, $lt: tomorrow }
+      });
+
+      // Calculate unique locations and other visit metrics
+      const visitMetrics = await Order.aggregate([
+        { $match: matchCriteria },
+        {
+          $group: {
+            _id: null,
+            totalOrders: { $sum: 1 },
+            uniqueLocations: { $addToSet: '$customer' },
+            totalRevenue: { $sum: { $ifNull: ['$totalAmount', 0] } },
+            totalPaid: { $sum: { $ifNull: ['$paidAmount', 0] } },
+            avgOrderValue: { $avg: { $ifNull: ['$totalAmount', 0] } },
+            maxOrderValue: { $max: { $ifNull: ['$totalAmount', 0] } },
+            minOrderValue: { $min: { $ifNull: ['$totalAmount', 0] } },
+            completedVisits: {
+              $sum: {
+                $cond: [
+                  { $in: ['$status', ['completed', 'delivered']] },
+                  1,
+                  0
+                ]
+              }
+            },
+            // Get date range for calculating average locations per day
+            minDate: { $min: '$orderDate' },
+            maxDate: { $max: '$orderDate' }
+          }
+        },
+        {
+          $addFields: {
+            uniqueLocationsCount: { $size: '$uniqueLocations' },
+            daysDifference: {
+              $max: [
+                1, // Minimum 1 day to avoid division by zero
+                {
+                  $ceil: {
+                    $divide: [
+                      { $subtract: ['$maxDate', '$minDate'] },
+                      1000 * 60 * 60 * 24 // Convert milliseconds to days
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          $addFields: {
+            avgLocationsPerDay: {
+              $round: [
+                { $divide: ['$uniqueLocationsCount', '$daysDifference'] },
+                2
+              ]
+            }
+          }
         }
-      }
-    ]);
+      ]);
+
+      metrics = visitMetrics[0] ? {
+        ...visitMetrics[0],
+        uniqueLocations: visitMetrics[0].uniqueLocationsCount,
+        totalVisitsToday: todayVisitsCount,
+        avgLocationsPerDay: visitMetrics[0].avgLocationsPerDay || 0
+      } : {
+        totalOrders: 0,
+        totalRevenue: 0,
+        totalPaid: 0,
+        avgOrderValue: 0,
+        maxOrderValue: 0,
+        minOrderValue: 0,
+        uniqueLocations: 0,
+        completedVisits: 0,
+        totalVisitsToday: todayVisitsCount,
+        avgLocationsPerDay: 0
+      };
+    } else {
+      // Order-specific metrics (existing logic)
+      const orderMetrics = await Order.aggregate([
+        { $match: matchCriteria },
+        {
+          $group: {
+            _id: null,
+            totalOrders: { $sum: 1 },
+            totalRevenue: { $sum: '$totalAmount' },
+            totalPaid: { $sum: '$paidAmount' },
+            avgOrderValue: { $avg: '$totalAmount' },
+            maxOrderValue: { $max: '$totalAmount' },
+            minOrderValue: { $min: '$totalAmount' }
+          }
+        }
+      ]);
+      
+      metrics = orderMetrics[0] || {
+        totalOrders: 0,
+        totalRevenue: 0,
+        totalPaid: 0,
+        avgOrderValue: 0,
+        maxOrderValue: 0,
+        minOrderValue: 0
+      };
+    }
 
     // Get monthly trend
     const monthlyTrend = await Order.aggregate([
@@ -528,12 +669,10 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
       { $unwind: '$customerInfo' }
     ]);
 
-    // Compute Aata (Atta/Wheat Flour) sales stats (normalize to KG)
-    const attaMatchRegex = /(atta|aata|wheat|flour|maida)/i;
+    // Compute total sales stats for ALL items (normalize to KG)
     const attaTotalsAgg = await Order.aggregate([
       { $match: matchCriteria },
       { $unwind: '$items' },
-      { $match: { 'items.productName': { $regex: attaMatchRegex } } },
       {
         $addFields: {
           itemKg: {
@@ -550,12 +689,13 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
                       {
                         $switch: {
                           branches: [
-                            { case: { $eq: ['$items.packaging', '5kg Bags'] }, then: 5 },
-                            { case: { $eq: ['$items.packaging', '10kg Bags'] }, then: 10 },
-                            { case: { $eq: ['$items.packaging', '25kg Bags'] }, then: 25 },
-                            { case: { $eq: ['$items.packaging', '50kg Bags'] }, then: 50 },
+                            { case: { $regexMatch: { input: '$items.packaging', regex: /5\s*kg/i } }, then: 5 },
+                            { case: { $regexMatch: { input: '$items.packaging', regex: /10\s*kg/i } }, then: 10 },
+                            { case: { $regexMatch: { input: '$items.packaging', regex: /25\s*kg/i } }, then: 25 },
+                            { case: { $regexMatch: { input: '$items.packaging', regex: /40\s*kg/i } }, then: 40 },
+                            { case: { $regexMatch: { input: '$items.packaging', regex: /50\s*kg/i } }, then: 50 },
                           ],
-                          default: 0
+                          default: 50
                         }
                       }
                     ]
@@ -579,7 +719,6 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
     const attaByGrade = await Order.aggregate([
       { $match: matchCriteria },
       { $unwind: '$items' },
-      { $match: { 'items.productName': { $regex: attaMatchRegex } } },
       {
         $addFields: {
           itemKg: {
@@ -596,12 +735,13 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
                       {
                         $switch: {
                           branches: [
-                            { case: { $eq: ['$items.packaging', '5kg Bags'] }, then: 5 },
-                            { case: { $eq: ['$items.packaging', '10kg Bags'] }, then: 10 },
-                            { case: { $eq: ['$items.packaging', '25kg Bags'] }, then: 25 },
-                            { case: { $eq: ['$items.packaging', '50kg Bags'] }, then: 50 },
+                            { case: { $regexMatch: { input: '$items.packaging', regex: /5\s*kg/i } }, then: 5 },
+                            { case: { $regexMatch: { input: '$items.packaging', regex: /10\s*kg/i } }, then: 10 },
+                            { case: { $regexMatch: { input: '$items.packaging', regex: /25\s*kg/i } }, then: 25 },
+                            { case: { $regexMatch: { input: '$items.packaging', regex: /40\s*kg/i } }, then: 40 },
+                            { case: { $regexMatch: { input: '$items.packaging', regex: /50\s*kg/i } }, then: 50 },
                           ],
-                          default: 0
+                          default: 50
                         }
                       }
                     ]
@@ -635,14 +775,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
         position: user.position,
         role: user.role?.name
       },
-      metrics: metrics[0] || {
-        totalOrders: 0,
-        totalRevenue: 0,
-        totalPaid: 0,
-        avgOrderValue: 0,
-        maxOrderValue: 0,
-        minOrderValue: 0
-      },
+      metrics,
       monthlyTrend,
       topCustomers,
       recentOrders,
