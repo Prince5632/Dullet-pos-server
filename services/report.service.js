@@ -8,10 +8,13 @@ const mongoose = require('mongoose');
  */
 exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue', sortOrder = 'desc') => {
   try {
-    const { dateRange, userId, department, godownId } = filters;
+    const { dateRange, userId, department, godownId, type } = filters;
 
-    // Build match criteria
-    const matchCriteria = { type: 'order', status: { $nin: ['cancelled', 'rejected'] } };
+    // Build match criteria - support both orders and visits
+    const matchCriteria = { 
+      type: type || 'order', 
+      status: { $nin: ['cancelled', 'rejected'] } 
+    };
     
     if (dateRange && dateRange.startDate && dateRange.endDate) {
       matchCriteria.orderDate = {
@@ -404,7 +407,7 @@ exports.getInactiveCustomers = async (days = 7) => {
  */
 exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
   try {
-    const { dateRange } = filters;
+    const { dateRange, type } = filters;
 
     // Get user info
     const user = await User.findById(userId)
@@ -418,7 +421,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
     // Build match criteria
     const matchCriteria = { 
       createdBy: new mongoose.Types.ObjectId(userId),
-      type: 'order',
+      type: type || 'order',
       status: { $nin: ['cancelled', 'rejected'] }
     };
     

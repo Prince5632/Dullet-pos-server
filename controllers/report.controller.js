@@ -7,7 +7,7 @@ const { sendSuccess, sendError } = require('../utils/response');
  */
 exports.getSalesExecutiveReports = async (req, res) => {
   try {
-    const { startDate, endDate, userId, sortBy = 'totalRevenue', sortOrder = 'desc', department, godownId } = req.query;
+    const { startDate, endDate, userId, sortBy = 'totalRevenue', sortOrder = 'desc', department, godownId, type } = req.query;
 
     const filters = {};
     if (startDate && endDate) {
@@ -20,6 +20,9 @@ exports.getSalesExecutiveReports = async (req, res) => {
     filters.department = department || 'Sales';
     if (godownId) {
       filters.godownId = godownId;
+    }
+    if (type) {
+      filters.type = type;
     }
 
     const report = await reportService.getSalesExecutiveReports(filters, sortBy, sortOrder);
@@ -112,11 +115,14 @@ exports.getInactiveCustomers = async (req, res) => {
 exports.getExecutivePerformanceDetail = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, type } = req.query;
 
     const filters = {};
     if (startDate && endDate) {
       filters.dateRange = { startDate: new Date(startDate), endDate: new Date(endDate) };
+    }
+    if (type) {
+      filters.type = type;
     }
 
     const detail = await reportService.getExecutivePerformanceDetail(userId, filters);

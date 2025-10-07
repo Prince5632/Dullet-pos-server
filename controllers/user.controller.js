@@ -40,8 +40,8 @@ const createUser = async (req, res) => {
     const {
       firstName,
       lastName,
-      email,
-      username,
+      email = null,
+      username = null,
       phone,
       password,
       roleId,
@@ -54,10 +54,6 @@ const createUser = async (req, res) => {
       panNumber,
       otherDocumentsMeta,
     } = req.body;
-
-    // Normalize email and username - convert empty strings to undefined
-    const normalizedEmail = email && email.trim() ? email.trim() : undefined;
-    const normalizedUsername = username && username.trim() ? username.trim() : undefined;
 
     // Validation
     if (
@@ -76,7 +72,7 @@ const createUser = async (req, res) => {
     }
 
     // Require at least one among email or username
-    if (!normalizedEmail && !normalizedUsername) {
+    if (!email && !username) {
       return res.status(400).json({
         success: false,
         message: "Either email or username is required",
@@ -139,8 +135,8 @@ const createUser = async (req, res) => {
     const userData = {
       firstName,
       lastName,
-      email: normalizedEmail,
-      username: normalizedUsername,
+      email,
+      username,
       phone,
       password,
       roleId,

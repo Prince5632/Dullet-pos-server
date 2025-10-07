@@ -304,6 +304,7 @@ const createUser = async (userData, createdBy) => {
     const saved = await saveProfilePhoto(profilePhoto, email, profilePhotoMimeType);
     profilePhotoPath = saved?.url || null;
   }
+   console.log(email,username)
   // Create user object
   const newUserData = {
     firstName: firstName.trim(),
