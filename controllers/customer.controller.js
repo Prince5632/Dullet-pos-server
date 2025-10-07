@@ -90,7 +90,7 @@ const updateCustomer = async (req, res) => {
   }
 };
 
-// Delete customer controller (soft delete)
+// Delete customer controller (hard delete)
 const deleteCustomer = async (req, res) => {
   try {
     const result = await customerService.deleteCustomer(

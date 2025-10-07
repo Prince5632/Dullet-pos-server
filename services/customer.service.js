@@ -189,9 +189,8 @@ class CustomerService {
 
     const oldValues = customer.toObject();
 
-    customer.isActive = false;
-    customer.updatedBy = deletedBy;
-    await customer.save();
+    // Permanently delete the customer from the database
+    await Customer.findByIdAndDelete(customerId);
 
     // Log the action
     await AuditLog.create({
@@ -201,15 +200,15 @@ class CustomerService {
       resourceType: "Customer",
       resourceId: customer._id.toString(),
       oldValues,
-      newValues: customer.toObject(),
-      description: `Deactivated customer: ${customer.businessName}`,
+      newValues: null, // Customer is permanently deleted
+      description: `Permanently deleted customer: ${customer.businessName}`,
       ipAddress: "0.0.0.0",
       userAgent: "System",
     });
 
     return {
       success: true,
-      message: "Customer deactivated successfully",
+      message: "Customer deleted permanently",
     };
   }
 
