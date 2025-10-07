@@ -135,8 +135,50 @@ customerSchema.index({ createdBy: 1 });
 // Generate customer ID before saving
 customerSchema.pre('save', async function(next) {
   if (!this.customerId) {
-    const count = await this.constructor.countDocuments();
-    this.customerId = `CUST${String(count + 1).padStart(4, '0')}`;
+    try {
+      // Use a more robust approach to prevent duplicate IDs
+      let customerId;
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      while (!isUnique && attempts < maxAttempts) {
+        // Get the current highest customer ID number
+        const lastCustomer = await this.constructor
+          .findOne({ customerId: { $regex: /^CUST\d{4}$/ } })
+          .sort({ customerId: -1 })
+          .select('customerId')
+          .lean();
+
+        let nextNumber = 1;
+        if (lastCustomer && lastCustomer.customerId) {
+          const lastNumber = parseInt(lastCustomer.customerId.replace('CUST', ''));
+          nextNumber = lastNumber + 1;
+        }
+
+        customerId = `CUST${String(nextNumber).padStart(4, '0')}`;
+
+        // Check if this ID already exists
+        const existingCustomer = await this.constructor.findOne({ customerId }).lean();
+        if (!existingCustomer) {
+          isUnique = true;
+        }
+        attempts++;
+      }
+
+      if (!isUnique) {
+        // Fallback: use timestamp-based ID if we can't generate a unique sequential ID
+        const timestamp = Date.now().toString().slice(-6);
+        customerId = `CUST${timestamp}`;
+      }
+
+      this.customerId = customerId;
+    } catch (error) {
+      console.error('Error generating customer ID:', error);
+      // Fallback: use timestamp-based ID
+      const timestamp = Date.now().toString().slice(-6);
+      this.customerId = `CUST${timestamp}`;
+    }
   }
   next();
 });

@@ -1,4 +1,4 @@
-const customerService = require('../services/customer.service');
+const customerService = require("../services/customer.service");
 
 // Get all customers controller
 const getAllCustomers = async (req, res) => {
@@ -8,7 +8,7 @@ const getAllCustomers = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -19,15 +19,15 @@ const getCustomerById = async (req, res) => {
     const result = await customerService.getCustomerById(req.params.id);
     res.status(200).json(result);
   } catch (error) {
-    if (error.message === 'Customer not found') {
+    if (error.message === "Customer not found") {
       res.status(404).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     } else {
       res.status(500).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
   }
@@ -36,18 +36,26 @@ const getCustomerById = async (req, res) => {
 // Create customer controller
 const createCustomer = async (req, res) => {
   try {
-    const result = await customerService.createCustomer(req.body, req.user.id);
+    let customerData = req.body;
+    if (customerData.assignedGodownId === "") {
+      const { assignedGodownId, ...otherData } = customerData;
+      customerData = otherData;
+    }
+    const result = await customerService.createCustomer(
+      customerData,
+      req.user.id
+    );
     res.status(201).json(result);
   } catch (error) {
-    if (error.message.includes('already exists')) {
+    if (error.message.includes("already exists")) {
       res.status(409).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     } else {
       res.status(400).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
   }
@@ -56,23 +64,27 @@ const createCustomer = async (req, res) => {
 // Update customer controller
 const updateCustomer = async (req, res) => {
   try {
-    const result = await customerService.updateCustomer(req.params.id, req.body, req.user.id);
+    const result = await customerService.updateCustomer(
+      req.params.id,
+      req.body,
+      req.user.id
+    );
     res.status(200).json(result);
   } catch (error) {
-    if (error.message === 'Customer not found') {
+    if (error.message === "Customer not found") {
       res.status(404).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
-    } else if (error.message.includes('already exists')) {
+    } else if (error.message.includes("already exists")) {
       res.status(409).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     } else {
       res.status(400).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
   }
@@ -81,18 +93,21 @@ const updateCustomer = async (req, res) => {
 // Delete customer controller (soft delete)
 const deleteCustomer = async (req, res) => {
   try {
-    const result = await customerService.deleteCustomer(req.params.id, req.user.id);
+    const result = await customerService.deleteCustomer(
+      req.params.id,
+      req.user.id
+    );
     res.status(200).json(result);
   } catch (error) {
-    if (error.message === 'Customer not found') {
+    if (error.message === "Customer not found") {
       res.status(404).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     } else {
       res.status(500).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
   }
@@ -101,18 +116,21 @@ const deleteCustomer = async (req, res) => {
 // Reactivate customer controller
 const reactivateCustomer = async (req, res) => {
   try {
-    const result = await customerService.reactivateCustomer(req.params.id, req.user.id);
+    const result = await customerService.reactivateCustomer(
+      req.params.id,
+      req.user.id
+    );
     res.status(200).json(result);
   } catch (error) {
-    if (error.message === 'Customer not found') {
+    if (error.message === "Customer not found") {
       res.status(404).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     } else {
       res.status(500).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
   }
@@ -126,7 +144,7 @@ const getCustomerStats = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -138,6 +156,5 @@ module.exports = {
   updateCustomer,
   deleteCustomer,
   reactivateCustomer,
-  getCustomerStats
+  getCustomerStats,
 };
-

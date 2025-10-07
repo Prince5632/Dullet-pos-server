@@ -1418,15 +1418,12 @@ class OrderService {
   // Get order statistics (supports optional godown scoping)
   async getOrderStats(query = {}, currentUser) {
     const filter = {};
-    // Scope by explicit godownId
-    if (query.godownId) {
-      filter.godown = query.godownId;
-    } else if (
-      currentUser &&
-      currentUser.role &&
-      currentUser.role.name !== "Super Admin"
-    ) {
-      // Role-based filtering
+    
+    // Priority 1: If godownId is provided and not empty, use it
+    if (query.godownId && query.godownId !== "") {
+      filter.godown = new mongoose.Types.ObjectId(query.godownId);
+    } else if (currentUser && currentUser.role) {
+      // Role-based filtering for non-super admins
       const roleName = currentUser.role.name;
 
       if (roleName === "Driver") {
@@ -1435,21 +1432,29 @@ class OrderService {
       } else if (["Sales Executive", "Staff"].includes(roleName)) {
         // Sales Executive and Staff: only show their own order stats
         filter.createdBy = currentUser._id;
-      } else {
-        // Manager, Admin, and other roles: show stats from their accessible godowns
-        // Non super-admins limited to their accessible/primary godowns
-        const accessible = currentUser.accessibleGodowns?.length
-          ? currentUser.accessibleGodowns
-          : currentUser.primaryGodown
-          ? [currentUser.primaryGodown]
-          : [];
-        if (accessible && accessible.length > 0) {
-          filter.godown = { $in: accessible };
-        } else {
-          // If user has no assigned godowns, show only their own stats as a fallback
+      } else if (roleName !== "Super Admin") {
+        // Manager, Admin, and other roles: use godown hierarchy
+        // Priority 2: Check for user's accessible godowns
+        if (currentUser.accessibleGodowns && currentUser.accessibleGodowns.length > 0) {
+          // Convert to ObjectIds if needed
+          const accessibleIds = currentUser.accessibleGodowns.map(godown => 
+            typeof godown === 'object' && godown._id ? godown._id : godown
+          );
+          filter.godown = { $in: accessibleIds };
+        } 
+        // Priority 3: Check for user's primary godown
+        else if (currentUser.primaryGodown) {
+          const primaryGodownId = typeof currentUser.primaryGodown === 'object' && currentUser.primaryGodown._id 
+            ? currentUser.primaryGodown._id 
+            : currentUser.primaryGodown;
+          filter.godown = primaryGodownId;
+        }
+        // Priority 4: If no godowns assigned, show only their own stats as fallback
+        else {
           filter.createdBy = currentUser._id;
         }
       }
+      // Super Admin: No godown filter applied (shows all godowns)
     }
     console.log(filter);
 
@@ -1492,11 +1497,7 @@ class OrderService {
           $match: {
             type: "order",
             orderDate: { $gte: startOfMonth },
-            ...(filter.godown ? { godown: new mongoose.Types.ObjectId(filter.godown) } : {}),
-            ...(filter.createdBy ? { createdBy: filter.createdBy } : {}),
-            ...(filter["driverAssignment.driver"]
-              ? { "driverAssignment.driver": filter["driverAssignment.driver"] }
-              : {}),
+            ...filter,
           },
         },
         { $group: { _id: null, total: { $sum: "$totalAmount" } } },
