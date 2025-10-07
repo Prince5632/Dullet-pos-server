@@ -75,7 +75,7 @@ const router = express.Router();
  *       500:
  *         description: Internal server error
  */
-router.get('/', authenticate, authorize('inventory.read'), inventoryController.getAllInventory);
+router.get('/', authenticate, authorize('stock.read'), inventoryController.getAllInventory);
 
 /**
  * @swagger
@@ -105,7 +105,7 @@ router.get('/', authenticate, authorize('inventory.read'), inventoryController.g
  *       500:
  *         description: Internal server error
  */
-router.get('/:id', authenticate, authorize('inventory.read'), inventoryController.getInventoryById);
+router.get('/:id', authenticate, authorize('stock.read'), inventoryController.getInventoryById);
 
 /**
  * @swagger
@@ -164,7 +164,7 @@ router.get('/:id', authenticate, authorize('inventory.read'), inventoryControlle
  *       500:
  *         description: Internal server error
  */
-router.post('/', authenticate, authorize('inventory.create'), inventoryController.createInventory);
+router.post('/', authenticate, authorize('stock.create'), inventoryController.createInventory);
 
 /**
  * @swagger
@@ -227,7 +227,7 @@ router.post('/', authenticate, authorize('inventory.create'), inventoryControlle
  *       500:
  *         description: Internal server error
  */
-router.put('/:id', authenticate, authorize('inventory.update'), inventoryController.updateInventory);
+router.put('/:id', authenticate, authorize('stock.update'), inventoryController.updateInventory);
 
 /**
  * @swagger
@@ -257,7 +257,7 @@ router.put('/:id', authenticate, authorize('inventory.update'), inventoryControl
  *       500:
  *         description: Internal server error
  */
-router.delete('/:id', authenticate, authorize('inventory.delete'), inventoryController.deleteInventory);
+router.delete('/:id', authenticate, authorize('stock.delete'), inventoryController.deleteInventory);
 
 /**
  * @swagger
@@ -296,7 +296,7 @@ router.delete('/:id', authenticate, authorize('inventory.delete'), inventoryCont
  *       500:
  *         description: Internal server error
  */
-router.get('/stats/summary', authenticate, authorize('inventory.read'), inventoryController.getInventoryStats);
+router.get('/stats/summary', authenticate, authorize('stock.read'), inventoryController.getInventoryStats);
 
 /**
  * @swagger
@@ -354,6 +354,6 @@ router.get('/stats/summary', authenticate, authorize('inventory.read'), inventor
  *       500:
  *         description: Internal server error
  */
-router.get('/godown/:godownId', authenticate, authorize('inventory.read'), inventoryController.getInventoryByGodown);
+router.get('/godown/:godownId', authenticate, authorize('stock.read'), inventoryController.getInventoryByGodown);
 
 module.exports = router;

@@ -33,6 +33,7 @@ const auditLogSchema = new mongoose.Schema({
       'billing',
       'stock',
       'production',
+      "inventory",
       'godowns',
       'customers',
       'employees',

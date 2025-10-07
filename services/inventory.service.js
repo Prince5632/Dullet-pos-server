@@ -45,9 +45,22 @@ class InventoryService {
       }
     }
 
-    // Search in additional notes
+    // Search across multiple fields
     if (search) {
-      filter.additionalNotes = { $regex: search, $options: "i" };
+      const searchConditions = [
+        { stockId: { $regex: search, $options: "i" } },
+        { inventoryType: { $regex: search, $options: "i" } },
+        { unit: { $regex: search, $options: "i" } },
+        { additionalNotes: { $regex: search, $options: "i" } }
+      ];
+
+      // If search is a valid number, also search in quantity field
+      const numericSearch = parseFloat(search);
+      if (!isNaN(numericSearch)) {
+        searchConditions.push({ quantity: numericSearch });
+      }
+
+      filter.$or = searchConditions;
     }
 
     const skip = (page - 1) * limit;
