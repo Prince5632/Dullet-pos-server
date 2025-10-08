@@ -179,7 +179,7 @@ class OrderService {
     const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
 
     // Execute queries
-    const [orders, totalOrders] = await Promise.all([
+    const [orders, totalOrders, totalAmountSum] = await Promise.all([
       Order.find(filter)
         .populate("customer", "customerId businessName contactPersonName phone")
         .populate("godown", "name location")
@@ -191,6 +191,10 @@ class OrderService {
         .limit(parseInt(limit))
         .lean(),
       Order.countDocuments(filter),
+      Order.aggregate([
+        { $match: filter },
+        { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } }
+      ]).then(result => result.length > 0 ? result[0].totalSum : 0),
     ]);
 
     const totalPages = Math.ceil(totalOrders / parseInt(limit));
@@ -203,6 +207,7 @@ class OrderService {
           currentPage: parseInt(page),
           totalPages,
           totalOrders,
+          totalAmountSum,
           limit: parseInt(limit),
           hasNext: parseInt(page) < totalPages,
           hasPrev: parseInt(page) > 1,
@@ -991,7 +996,7 @@ class OrderService {
     const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
 
     // Execute queries
-    const [orders, totalOrders] = await Promise.all([
+    const [orders, totalOrders, totalAmountSum] = await Promise.all([
       Order.find(filter)
         .populate("customer", "customerId businessName contactPersonName phone")
         .populate("createdBy", "firstName lastName")
@@ -1000,6 +1005,10 @@ class OrderService {
         .limit(parseInt(limit))
         .lean(),
       Order.countDocuments(filter),
+      Order.aggregate([
+        { $match: filter },
+        { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } }
+      ]).then(result => result.length > 0 ? result[0].totalSum : 0),
     ]);
 
     const totalPages = Math.ceil(totalOrders / parseInt(limit));
@@ -1012,6 +1021,7 @@ class OrderService {
           currentPage: parseInt(page),
           totalPages,
           totalOrders,
+          totalAmountSum,
           limit: parseInt(limit),
           hasNext: parseInt(page) < totalPages,
           hasPrev: parseInt(page) > 1,
@@ -1413,7 +1423,7 @@ class OrderService {
     const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
 
     // Execute queries
-    const [orders, totalOrders] = await Promise.all([
+    const [orders, totalOrders, totalAmountSum] = await Promise.all([
       Order.find(filter)
         .populate("customer", "customerId businessName contactPersonName phone")
         .populate("createdBy", "firstName lastName")
@@ -1424,6 +1434,10 @@ class OrderService {
         .limit(parseInt(limit))
         .lean(),
       Order.countDocuments(filter),
+      Order.aggregate([
+        { $match: filter },
+        { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } }
+      ]).then(result => result.length > 0 ? result[0].totalSum : 0),
     ]);
 
     const totalPages = Math.ceil(totalOrders / parseInt(limit));
@@ -1437,6 +1451,7 @@ class OrderService {
           currentPage: parseInt(page),
           totalPages,
           totalOrders,
+          totalAmountSum,
           limit: parseInt(limit),
           hasNext: parseInt(page) < totalPages,
           hasPrev: parseInt(page) > 1,
