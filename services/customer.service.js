@@ -145,6 +145,21 @@ class CustomerService {
       throw new Error("Customer not found");
     }
 
+    // Calculate outstanding amount from unpaid orders
+    const Order = require('../models/order.schema');
+    const outstandingOrders = await Order.find({
+      customer: customerId,
+      type: 'order', // Only consider orders, not visits
+      paymentStatus: { $in: ['pending', 'partial', 'overdue'] }
+    }).select('totalAmount paidAmount').lean();
+
+    const calculatedOutstanding = outstandingOrders.reduce((total, order) => {
+      return total + (order.totalAmount - (order.paidAmount || 0));
+    }, 0);
+
+    // Update the customer object with calculated outstanding amount
+    customer.outstandingAmount = Math.max(0, calculatedOutstanding);
+
     return {
       success: true,
       data: { customer },

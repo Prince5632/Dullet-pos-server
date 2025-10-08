@@ -894,6 +894,20 @@ class OrderService {
 
     const oldValues = order.toObject();
 
+    // Calculate payment updates
+    const amountCollected = payload.settlement?.amountCollected || 0;
+    const newPaidAmount = (order.paidAmount || 0) + amountCollected;
+    
+    // Update payment status based on new paid amount
+    let newPaymentStatus = order.paymentStatus;
+    if (newPaidAmount >= order.totalAmount) {
+      newPaymentStatus = "paid";
+    } else if (newPaidAmount > 0) {
+      newPaymentStatus = "partial";
+    } else {
+      newPaymentStatus = "pending";
+    }
+
     order.status = "delivered";
     order.driverAssignment = {
       ...order.driverAssignment,
@@ -903,12 +917,16 @@ class OrderService {
     order.signatures = payload.signatures;
     order.settlements = [
       {
-        amountCollected: payload.settlement?.amountCollected || 0,
+        amountCollected: amountCollected,
         notes: payload.settlement?.notes || "",
         recordedBy: user._id,
         recordedAt: new Date(),
       },
     ];
+    
+    // Update payment fields
+    order.paidAmount = newPaidAmount;
+    order.paymentStatus = newPaymentStatus;
     order.updatedBy = user._id;
 
     await order.save();
