@@ -24,15 +24,11 @@ const connectDB = async () => {
 
 const seedDefaultData = async () => {
   try {
-    const { Permission, Role, User } = require('../models');
+    const { Permission, Role, User, Godown, seedDefaults } = require('../models');
     
-    // Seed permissions first
-    console.log('Seeding default permissions...');
-    await Permission.seedDefaultPermissions();
-    
-    // Seed roles
-    console.log('Seeding default roles...');
-    await Role.seedDefaultRoles();
+    // Use centralized seeding function for permissions, roles, and godowns
+    console.log('Seeding default data (permissions, roles, godowns)...');
+    await seedDefaults();
     
     // Create default super admin
     console.log('Creating default super admin...');

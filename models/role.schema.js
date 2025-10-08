@@ -96,7 +96,7 @@ roleSchema.statics.seedDefaultRoles = async function () {
               ["create", "read", "update"].includes(p.action)) ||
             (p.module === "customers" &&
               ["create", "read", "update"].includes(p.action)) ||
-            (p.module === "stock" && p.action === "read") ||
+            // (p.module === "stock" && p.action === "read") ||
             (p.module === "attendance" &&
               ["create", "read"].includes(p.action)) ||
             (p.module === "godowns" && p.action === "read")

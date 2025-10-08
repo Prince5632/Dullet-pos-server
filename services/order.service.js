@@ -127,7 +127,10 @@ class OrderService {
         filter.orderDate.$gte = new Date(dateFrom);
       }
       if (dateTo) {
-        filter.orderDate.$lte = new Date(dateTo);
+        // Set end date to end of day (23:59:59.999) to include all orders on that date
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        filter.orderDate.$lte = endDate;
       }
     }
 
@@ -482,7 +485,10 @@ class OrderService {
         filter.orderDate.$gte = new Date(dateFrom);
       }
       if (dateTo) {
-        filter.orderDate.$lte = new Date(dateTo);
+        // Set end date to end of day (23:59:59.999) to include all orders on that date
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        filter.orderDate.$lte = endDate;
       }
     }
 
@@ -955,7 +961,10 @@ class OrderService {
         filter.orderDate.$gte = new Date(dateFrom);
       }
       if (dateTo) {
-        filter.orderDate.$lte = new Date(dateTo);
+        // Set end date to end of day (23:59:59.999) to include all orders on that date
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        filter.orderDate.$lte = endDate;
       }
     }
 
@@ -1337,7 +1346,10 @@ class OrderService {
         filter.orderDate.$gte = new Date(dateFrom);
       }
       if (dateTo) {
-        filter.orderDate.$lte = new Date(dateTo);
+        // Set end date to end of day (23:59:59.999) to include all orders on that date
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        filter.orderDate.$lte = endDate;
       }
     }
 
@@ -1475,7 +1487,10 @@ class OrderService {
         filter.orderDate.$gte = new Date(dateFrom);
       }
       if (dateTo) {
-        filter.orderDate.$lte = new Date(dateTo);
+        // Set end date to end of day (23:59:59.999) to include all orders on that date
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        filter.orderDate.$lte = endDate;
       }
     }
     

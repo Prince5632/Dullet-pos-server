@@ -429,7 +429,17 @@ const changePassword = async (
       ipAddress: ipAddress || "Unknown",
       userAgent: userAgent || "Unknown",
     });
-
+    // Log password change
+    await AuditLog.logAction({
+      user: userId,
+      action: "UPDATE",
+      module: "users",
+      resourceType: "User",
+      resourceId: userId.toString(),
+      description: "Password changed",
+      ipAddress: ipAddress || "Unknown",
+      userAgent: userAgent || "Unknown",
+    });
     return {
       success: true,
       message: "Password changed successfully. Please login again.",
