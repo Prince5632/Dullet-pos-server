@@ -215,7 +215,7 @@ class OrderService {
   async getOrderById(orderId) {
     const order = await Order.findById(orderId)
       .populate("customer")
-      .populate("godown", "name location")
+      .populate("godown", "name location contact")
       .populate("createdBy", "firstName lastName")
       .populate("approvedBy", "firstName lastName")
       .populate("driverAssignment.driver", "firstName lastName phone")

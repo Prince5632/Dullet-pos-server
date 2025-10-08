@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 /**
  * Get Sales Executive Reports
  */
-exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue', sortOrder = 'desc') => {
+exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue', sortOrder = 'desc', requestingUser = null) => {
   try {
     const { dateRange, userId, department, godownId, type } = filters;
 
@@ -30,11 +30,56 @@ exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue',
       matchCriteria.createdBy = new mongoose.Types.ObjectId(userId);
     }
 
+    // Apply user-specific godown filtering
+    let godownFilter = {};
+    if (requestingUser && (requestingUser.primaryGodown || (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0))) {
+      const allowedGodowns = [];
+      
+      if (requestingUser.primaryGodown) {
+        allowedGodowns.push(requestingUser.primaryGodown._id || requestingUser.primaryGodown);
+      }
+      
+      if (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0) {
+        allowedGodowns.push(...requestingUser.accessibleGodowns.map(g => g._id || g));
+      }
+      
+      if (allowedGodowns.length > 0) {
+        godownFilter.godown = { $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) };
+      }
+    }
+
+    // If specific godownId is provided, ensure it's within user's accessible godowns
+    if (godownId) {
+      const specificGodown = new mongoose.Types.ObjectId(godownId);
+      if (godownFilter.godown) {
+        // Check if the specific godown is in the allowed list
+        const isAllowed = godownFilter.godown.$in.some(id => id.equals(specificGodown));
+        if (isAllowed) {
+          godownFilter.godown = specificGodown;
+        } else {
+          // User doesn't have access to this godown, return empty results
+          return {
+            summary: {
+              totalSalesExecutives: 0,
+              totalOrdersAll: 0,
+              totalRevenueAll: 0,
+              totalOutstandingAll: 0,
+              avgOrderValueAll: 0
+            },
+            reports: [],
+            dateRange: dateRange || null
+          };
+        }
+      } else {
+        godownFilter.godown = specificGodown;
+      }
+    }
+
     // Aggregate orders by sales executive
     const reports = await Order.aggregate([
       { $match: matchCriteria },
-      // Optional godown filter at order level
-      ...(godownId ? [{ $match: { godown: new mongoose.Types.ObjectId(godownId) } }] : []),
+      // Apply godown filter
+      ...(Object.keys(godownFilter).length > 0 ? [{ $match: godownFilter }] : []),
       {
         $group: {
           _id: '$createdBy',
@@ -153,7 +198,7 @@ exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue',
 /**
  * Get Godown-wise Sales Reports
  */
-exports.getGodownSalesReports = async (filters = {}, sortBy = 'totalRevenue', sortOrder = 'desc') => {
+exports.getGodownSalesReports = async (filters = {}, sortBy = 'totalRevenue', sortOrder = 'desc', requestingUser = null) => {
   try {
     const { dateRange } = filters;
 
@@ -166,6 +211,23 @@ exports.getGodownSalesReports = async (filters = {}, sortBy = 'totalRevenue', so
       }
       if (dateRange.endDate) {
         matchCriteria.orderDate.$lte = dateRange.endDate;
+      }
+    }
+
+    // Apply user-specific godown filtering
+    if (requestingUser && (requestingUser.primaryGodown || (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0))) {
+      const allowedGodowns = [];
+      
+      if (requestingUser.primaryGodown) {
+        allowedGodowns.push(requestingUser.primaryGodown._id || requestingUser.primaryGodown);
+      }
+      
+      if (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0) {
+        allowedGodowns.push(...requestingUser.accessibleGodowns.map(g => g._id || g));
+      }
+      
+      if (allowedGodowns.length > 0) {
+        matchCriteria.godown = { $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) };
       }
     }
 
@@ -221,7 +283,7 @@ exports.getGodownSalesReports = async (filters = {}, sortBy = 'totalRevenue', so
 /**
  * Get Customer Reports
  */
-exports.getCustomerReports = async (filters = {}, sortBy = 'totalSpent', sortOrder = 'desc') => {
+exports.getCustomerReports = async (filters = {}, sortBy = 'totalSpent', sortOrder = 'desc', requestingUser = null) => {
   try {
     const { dateRange, customerId, inactiveDays } = filters;
 
@@ -240,6 +302,23 @@ exports.getCustomerReports = async (filters = {}, sortBy = 'totalSpent', sortOrd
 
     if (customerId) {
       matchCriteria.customer = new mongoose.Types.ObjectId(customerId);
+    }
+
+    // Apply user-specific godown filtering
+    if (requestingUser && (requestingUser.primaryGodown || (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0))) {
+      const allowedGodowns = [];
+      
+      if (requestingUser.primaryGodown) {
+        allowedGodowns.push(requestingUser.primaryGodown._id || requestingUser.primaryGodown);
+      }
+      
+      if (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0) {
+        allowedGodowns.push(...requestingUser.accessibleGodowns.map(g => g._id || g));
+      }
+      
+      if (allowedGodowns.length > 0) {
+        matchCriteria.godown = { $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) };
+      }
     }
 
     // Aggregate orders by customer

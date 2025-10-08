@@ -133,8 +133,8 @@ const getAllUsers = async (queryParams, requestingUserId = null) => {
     query.isActive = isActive === "true";
   }
 
-  // Special filtering for drivers based on requesting user's godown access
-  if (role === "Driver" && requestingUserId) {
+  // Apply godown-based filtering for all users based on requesting user's godown access
+  if (requestingUserId) {
     // Get the requesting user's godown information
     const requestingUser = await User.findById(requestingUserId)
       .select("primaryGodown accessibleGodowns")
@@ -165,13 +165,28 @@ const getAllUsers = async (queryParams, requestingUserId = null) => {
         ...new Set(allowedGodowns.map((id) => id.toString())),
       ];
 
-      // Filter drivers to only those with common godowns
-      query.$or = [
-        // Drivers whose primaryGodown matches any of the requesting user's godowns
-        { primaryGodown: { $in: uniqueGodowns } },
-        // Drivers whose accessibleGodowns have at least one common godown
-        { accessibleGodowns: { $in: uniqueGodowns } },
-      ];
+      // Create godown filter for users
+      const godownFilter = {
+        $or: [
+          // Users whose primaryGodown matches any of the requesting user's godowns
+          { primaryGodown: { $in: uniqueGodowns } },
+          // Users whose accessibleGodowns have at least one common godown
+          { accessibleGodowns: { $in: uniqueGodowns } },
+          // Users who don't have any godown assigned (for backward compatibility)
+          { 
+            $and: [
+              { primaryGodown: { $exists: false } },
+              { accessibleGodowns: { $size: 0 } }
+            ]
+          },
+          {
+            $and: [
+              { primaryGodown: null },
+              { accessibleGodowns: { $size: 0 } }
+            ]
+          }
+        ],
+      };
 
       // If there was already a search query, combine it with the godown filter
       if (search) {
@@ -184,15 +199,13 @@ const getAllUsers = async (queryParams, requestingUserId = null) => {
               { employeeId: { $regex: search, $options: "i" } },
             ],
           },
-          {
-            $or: [
-              { primaryGodown: { $in: uniqueGodowns } },
-              { accessibleGodowns: { $in: uniqueGodowns } },
-            ],
-          },
+          godownFilter,
         ];
         // Remove the original $or since we're using $and now
         delete query.$or;
+      } else {
+        // Apply godown filter directly
+        Object.assign(query, godownFilter);
       }
     }
   }

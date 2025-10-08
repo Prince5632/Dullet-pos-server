@@ -3,7 +3,7 @@ const { AuditLog } = require("../models");
 
 class CustomerService {
   // Get all customers with pagination and filtering
-  async getAllCustomers(query = {}) {
+  async getAllCustomers(query = {}, requestingUser = null) {
     const {
       page = 1,
       limit = 10,
@@ -18,13 +18,16 @@ class CustomerService {
 
     // Build filter object
     const filter = {};
-
+    
+    // Store search conditions separately to combine with godown filters later
+    let searchConditions = null;
     if (search) {
-      filter.$or = [
+      searchConditions = [
         { businessName: { $regex: search, $options: "i" } },
         { contactPersonName: { $regex: search, $options: "i" } },
         { phone: { $regex: search, $options: "i" } },
         { customerId: { $regex: search, $options: "i" } },
+        { location: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -42,6 +45,59 @@ class CustomerService {
 
     if (city) {
       filter["address.city"] = { $regex: city, $options: "i" };
+    }
+
+    // Apply user-specific godown filtering based on assignedGodownId
+    let godownConditions = null;
+    if (requestingUser && (requestingUser.primaryGodown || (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0))) {
+      const allowedGodowns = [];
+      
+      if (requestingUser.primaryGodown) {
+        allowedGodowns.push(requestingUser.primaryGodown._id || requestingUser.primaryGodown);
+      }
+      
+      if (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0) {
+        allowedGodowns.push(...requestingUser.accessibleGodowns.map(g => g._id || g));
+      }
+      
+      if (allowedGodowns.length > 0) {
+        const mongoose = require('mongoose');
+        
+        // Also include customers who have orders from accessible godowns but no assignedGodownId
+        const { Order } = require("../models");
+        const customersWithOrders = await Order.distinct('customer', {
+          godown: { $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) }
+        });
+        
+        if (customersWithOrders.length > 0) {
+          // Godown conditions: customers with assignedGodownId OR customers with orders from accessible godowns
+          godownConditions = [
+            { assignedGodownId: { $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) } },
+            { _id: { $in: customersWithOrders }, assignedGodownId: { $exists: false } },
+            { _id: { $in: customersWithOrders }, assignedGodownId: null }
+          ];
+        } else {
+          // Only filter by assignedGodownId if no orders found
+          filter.assignedGodownId = { 
+            $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) 
+          };
+        }
+      }
+    }
+
+    // Combine search and godown conditions properly
+    if (searchConditions && godownConditions) {
+      // Both search and godown filters exist - combine them with $and
+      filter.$and = [
+        { $or: searchConditions },
+        { $or: godownConditions }
+      ];
+    } else if (searchConditions) {
+      // Only search filter exists
+      filter.$or = searchConditions;
+    } else if (godownConditions) {
+      // Only godown filter exists
+      filter.$or = godownConditions;
     }
 
     // Calculate pagination

@@ -115,22 +115,75 @@ const getGodowns = async (req, res) => {
         countFilter['captureLocation.address'] = { $regex: req.query.address, $options: "i" };
       }
 
+      // Apply consistent filtering with Sales Executive Reports
+      // Exclude cancelled and rejected orders/visits
+      const baseOrderFilter = { 
+        ...countFilter, 
+        type: 'order',
+        status: { $nin: ['cancelled', 'rejected'] }
+      };
+
+      const baseVisitFilter = { 
+        ...countFilter, 
+        type: 'visit',
+        status: { $nin: ['cancelled', 'rejected'] }
+      };
+
+      // Get department filter from query params (optional)
+      const department = req.query.department;
+
+      // Build aggregation pipeline for order counts
+      const orderPipeline = [
+        { $match: baseOrderFilter },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'createdBy',
+            foreignField: '_id',
+            as: 'createdByUser'
+          }
+        },
+        { $unwind: { path: '$createdByUser', preserveNullAndEmptyArrays: true } }
+      ];
+
+      // Add department filter only if specified
+      if (department) {
+        orderPipeline.push({ $match: { 'createdByUser.department': department } });
+      }
+
+      orderPipeline.push({ $group: { _id: '$godown', count: { $sum: 1 } } });
+
       // Aggregate order counts with filters
-      const orderCounts = await Order.aggregate([
-        { $match: { ...countFilter, type: 'order' } },
-        { $group: { _id: '$godown', count: { $sum: 1 } } }
-      ]); // [memory:1][memory:2]
+      const orderCounts = await Order.aggregate(orderPipeline); // [memory:1][memory:2]
 
       orderCountsMap = orderCounts.reduce((acc, c) => {
         acc[c._id.toString()] = c.count;
         return acc;
       }, {}); // [memory:1]
 
+      // Build aggregation pipeline for visit counts
+      const visitPipeline = [
+        { $match: baseVisitFilter },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'createdBy',
+            foreignField: '_id',
+            as: 'createdByUser'
+          }
+        },
+        { $unwind: { path: '$createdByUser', preserveNullAndEmptyArrays: true } }
+      ];
+
+      // Add department filter only if specified
+      if (department) {
+        visitPipeline.push({ $match: { 'createdByUser.department': department } });
+      }
+
+      visitPipeline.push({ $group: { _id: '$godown', count: { $sum: 1 } } });
+
       // Aggregate visit counts with filters
-      const visitCounts = await Order.aggregate([
-        { $match: { ...countFilter, type: 'visit' } },
-        { $group: { _id: '$godown', count: { $sum: 1 } } }
-      ]); // [memory:1][memory:2]
+      const visitCounts = await Order.aggregate(visitPipeline); // [memory:1][memory:2]
 
       visitCountsMap = visitCounts.reduce((acc, c) => {
         acc[c._id.toString()] = c.count;

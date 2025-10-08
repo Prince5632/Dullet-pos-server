@@ -3,7 +3,7 @@ const customerService = require("../services/customer.service");
 // Get all customers controller
 const getAllCustomers = async (req, res) => {
   try {
-    const result = await customerService.getAllCustomers(req.query);
+    const result = await customerService.getAllCustomers(req.query, req.user);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({

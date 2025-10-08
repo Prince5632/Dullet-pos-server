@@ -22,8 +22,10 @@ exports.getSalesExecutiveReports = async (req, res) => {
     if (userId) {
       filters.userId = userId;
     }
-    // Default to Sales department if not specified
-    filters.department = department || 'Sales';
+    // Add department filter only if specified
+    if (department) {
+      filters.department = department;
+    }
     if (godownId) {
       filters.godownId = godownId;
     }
@@ -31,7 +33,7 @@ exports.getSalesExecutiveReports = async (req, res) => {
       filters.type = type;
     }
 
-    const report = await reportService.getSalesExecutiveReports(filters, sortBy, sortOrder);
+    const report = await reportService.getSalesExecutiveReports(filters, sortBy, sortOrder, req.user);
 
     return sendSuccess(res, report, 'Sales executive reports retrieved successfully');
   } catch (error) {
@@ -59,7 +61,7 @@ exports.getGodownSalesReports = async (req, res) => {
       }
     }
 
-    const report = await reportService.getGodownSalesReports(filters, sortBy, sortOrder);
+    const report = await reportService.getGodownSalesReports(filters, sortBy, sortOrder, req.user);
 
     return sendSuccess(res, report, 'Godown-wise sales reports retrieved successfully');
   } catch (error) {
@@ -100,7 +102,7 @@ exports.getCustomerReports = async (req, res) => {
       filters.inactiveDays = parseInt(inactiveDays);
     }
 
-    const report = await reportService.getCustomerReports(filters, sortBy, sortOrder);
+    const report = await reportService.getCustomerReports(filters, sortBy, sortOrder, req.user);
 
     return sendSuccess(res, report, 'Customer reports retrieved successfully');
   } catch (error) {

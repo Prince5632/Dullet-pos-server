@@ -65,6 +65,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       location: { city: "Delhi", state: "Delhi", area: "East" },
       contact: {
         phone: "+91 76969 12132",
+        email: "dulletindustries@gmail.com",
       },
     },
     {
@@ -73,6 +74,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       location: { city: "Delhi", state: "Delhi", area: "West" },
       contact: {
         phone: "+91 90419 83039",
+        email: "dulletindustries@gmail.com",
       },
     },
     {
@@ -81,6 +83,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       location: { city: "Jalandhar", state: "Punjab" },
       contact: {
         phone: "+91 76969 83151",
+        email: "dulletindustries@gmail.com",
       },
     },
     {
@@ -89,6 +92,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       location: { city: "Ludhiana", state: "Punjab" },
       contact: {
         phone: "+91 76969 83151",
+        email: "dulletindustries@gmail.com",
       },
     },
     {
@@ -97,6 +101,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       location: { city: "Fatehgarh Sahib", state: "Punjab" },
       contact: {
         phone: "+91 90419 83039",
+        email: "dulletindustries@gmail.com",
       },
     },
     {
@@ -105,6 +110,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       location: { city: "Jammu", state: "Jammu & Kashmir" },
       contact: {
         phone: "+91 76969 83151",
+        email: "dulletindustries@gmail.com",  
       },
     },
     {
@@ -113,6 +119,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       location: { city: "Ambala", state: "Haryana" },
       contact: {
         phone: "+91 90565 48729,+91 76967 42284",
+        email: "dulletindustries@gmail.com", 
       },
     },
   ];
