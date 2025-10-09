@@ -1052,6 +1052,34 @@ router.put('/:id/cancel', authenticate, authorize('orders.update'), orderControl
 
 /**
  * @swagger
+ * /api/orders/{id}:
+ *   delete:
+ *     summary: Delete order or visit
+ *     description: Permanently delete an order or visit (Super Admin only)
+ *     tags: [Order Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order or Visit ID
+ *     responses:
+ *       200:
+ *         description: Order/Visit deleted successfully
+ *       404:
+ *         description: Order/Visit not found
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.delete('/:id', authenticate, authorize('orders.delete'), orderController.deleteOrder);
+
+/**
+ * @swagger
  * /api/orders/status/{status}:
  *   get:
  *     summary: Get orders by status

@@ -1948,6 +1948,40 @@ class OrderService {
       },
     };
   }
+
+  // Delete order/visit
+  async deleteOrder(orderId, deletedBy) {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error("Order not found");
+    }
+
+    const oldValues = order.toObject();
+    const resourceType = order.type === "visit" ? "Visit" : "Order";
+    const resourceName = order.type === "visit" ? "visit" : "order";
+
+    // Permanently delete the order/visit from the database
+    await Order.findByIdAndDelete(orderId);
+
+    // Log the action
+    await AuditLog.create({
+      user: deletedBy,
+      action: "DELETE",
+      module: "orders",
+      resourceType,
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: null, // Order/visit is permanently deleted
+      description: `Permanently deleted ${resourceName}: ${order.orderNumber}`,
+      ipAddress: "0.0.0.0",
+      userAgent: "System",
+    });
+
+    return {
+      success: true,
+      message: `${resourceType} deleted permanently`,
+    };
+  }
 }
 
 module.exports = new OrderService();

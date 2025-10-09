@@ -337,6 +337,26 @@ const cancelOrder = async (req, res) => {
   }
 };
 
+// Delete order/visit controller
+const deleteOrder = async (req, res) => {
+  try {
+    const result = await orderService.deleteOrder(req.params.id, req.user.id);
+    res.status(200).json(result);
+  } catch (error) {
+    if (error.message === 'Order not found') {
+      res.status(404).json({
+        success: false,
+        message: error.message
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+};
+
 // Get orders by status controller
 const getOrdersByStatus = async (req, res) => {
   try {
@@ -546,6 +566,7 @@ module.exports = {
   markAsDelivered,
   completeOrder,
   cancelOrder,
+  deleteOrder,
   getOrdersByStatus,
   getCustomerOrderHistory,
   getOrderStats,

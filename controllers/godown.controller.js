@@ -87,7 +87,10 @@ const getGodowns = async (req, res) => {
           countFilter.orderDate.$gte = new Date(req.query.dateFrom);
         }
         if (req.query.dateTo) {
-          countFilter.orderDate.$lte = new Date(req.query.dateTo);
+          // Set end date to end of day (23:59:59.999) to include all orders on that date
+          const endDate = new Date(req.query.dateTo);
+          endDate.setHours(23, 59, 59, 999);
+          countFilter.orderDate.$lte = endDate;
         }
       }
 
