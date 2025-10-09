@@ -120,7 +120,7 @@ class InventoryService {
 
     // Validate enum values
     const validInventoryTypes = ['New Stock', 'Stock Sold', 'Damaged / Return'];
-    const validUnits = ['Kg', 'Quintal',"40Kg Bag"];
+    const validUnits = ['Kg', 'Quintal',"40Kg Bag","50Kg Bag"];
 
     if (!validInventoryTypes.includes(inventoryData.inventoryType)) {
       throw new Error('Invalid inventory type');
@@ -180,7 +180,7 @@ class InventoryService {
     }
 
     if (updateData.unit) {
-      const validUnits = ['Kg', 'Quintal',"40Kg Bag"];
+      const validUnits = ['Kg', 'Quintal',"40Kg Bag","50Kg Bag"];
       if (!validUnits.includes(updateData.unit)) {
         throw new Error('Invalid unit');
       }
