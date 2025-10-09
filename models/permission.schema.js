@@ -23,7 +23,8 @@ const permissionSchema = new mongoose.Schema({
       'reports',
       'settings',
       'attendance',
-      'audit'
+      'audit',
+      'transits',
     ]
   },
   action: {
@@ -113,7 +114,14 @@ permissionSchema.statics.seedDefaultPermissions = async function() {
     
     // Audit & Activity Management
     { name: 'audit.read', module: 'audit', action: 'read', description: 'View system activity and audit logs' },
-    { name: 'audit.manage', module: 'audit', action: 'manage', description: 'Full audit and activity management access' }
+    { name: 'audit.manage', module: 'audit', action: 'manage', description: 'Full audit and activity management access' },
+    
+    // Transit Management
+    { name: 'transits.create', module: 'transits', action: 'create', description: 'Create new transits' },
+    { name: 'transits.read', module: 'transits', action: 'read', description: 'View transits' },
+    { name: 'transits.update', module: 'transits', action: 'update', description: 'Update transits' },
+    { name: 'transits.delete', module: 'transits', action: 'delete', description: 'Delete transits' },
+    { name: 'transits.manage', module: 'transits', action: 'manage', description: 'Manage transit assignments and status' },
   ];
 
   for (const permission of defaultPermissions) {

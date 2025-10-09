@@ -17,6 +17,7 @@ const attendanceRoutes = require("./routes/attendance.routes");
 const reportRoutes = require("./routes/report.routes");
 const inventoryRoutes = require("./routes/inventory.routes");
 const auditRoutes = require("./routes/audit.routes");
+const transitRoutes = require("./routes/transit.routes");
 
 const app = express();
 const Models = require("./models");
@@ -58,6 +59,7 @@ app.use("/api/attendance", attendanceRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/audit", auditRoutes);
+app.use("/api/transits", transitRoutes);
 
 /**
  * @swagger
