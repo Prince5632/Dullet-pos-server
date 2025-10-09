@@ -157,4 +157,41 @@ auditLogSchema.statics.getUserActivityLog = async function(userId, options = {})
   };
 };
 
+// Static method to get activity log for a specific user
+auditLogSchema.statics.getAllSystemActivity = async function(options = {}) {
+  const { limit = 100, skip = 0, module, action, resourceType, userId } = options;
+  
+  // Build filter query
+  const filter = {};
+  if (module) filter.module = module;
+  if (action) filter.action = action;
+  if (resourceType) filter.resourceType = resourceType;
+  
+  // Filter by user ID if provided
+  if (userId) {
+    filter.user = userId;
+  }
+  
+  const query = this.find(filter)
+    .populate('user', 'firstName lastName email employeeId')
+    .sort({ createdAt: -1 });
+
+  if (limit > 0) {
+    query.limit(limit);
+  }
+  
+  if (skip > 0) {
+    query.skip(skip);
+  }
+
+  const logs = await query;
+  const total = await this.countDocuments(filter);
+  
+  return {
+    logs,
+    total,
+    hasMore: skip + logs.length < total
+  };
+};
+
 module.exports = mongoose.model('AuditLog', auditLogSchema);

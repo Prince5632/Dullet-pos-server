@@ -22,7 +22,8 @@ const permissionSchema = new mongoose.Schema({
       'employees',
       'reports',
       'settings',
-      'attendance'
+      'attendance',
+      'audit'
     ]
   },
   action: {
@@ -108,7 +109,11 @@ permissionSchema.statics.seedDefaultPermissions = async function() {
     { name: 'attendance.read', module: 'attendance', action: 'read', description: 'View attendance records' },
     { name: 'attendance.update', module: 'attendance', action: 'update', description: 'Update attendance records' },
     { name: 'attendance.delete', module: 'attendance', action: 'delete', description: 'Delete attendance records' },
-    { name: 'attendance.manage', module: 'attendance', action: 'manage', description: 'Full attendance management access' }
+    { name: 'attendance.manage', module: 'attendance', action: 'manage', description: 'Full attendance management access' },
+    
+    // Audit & Activity Management
+    { name: 'audit.read', module: 'audit', action: 'read', description: 'View system activity and audit logs' },
+    { name: 'audit.manage', module: 'audit', action: 'manage', description: 'Full audit and activity management access' }
   ];
 
   for (const permission of defaultPermissions) {

@@ -103,6 +103,16 @@ const orderSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  isTaxable: {
+    type: Boolean,
+    default: false
+  },
+  taxPercentage: {
+    type: Number,
+    default: 5,
+    min: 0,
+    max: 100
+  },
   totalAmount: {
     type: Number,
     required: function() { return this.type === 'order'; },
@@ -431,6 +441,14 @@ orderSchema.pre('validate', function(next) {
     discountAmount = (this.subtotal * this.discountPercentage) / 100;
   } else {
     discountAmount = this.discount || 0;
+  }
+  
+  // Calculate tax amount based on isTaxable flag
+  if (this.isTaxable) {
+    const taxableAmount = this.subtotal - discountAmount;
+    this.taxAmount = (taxableAmount * (this.taxPercentage || 5)) / 100;
+  } else {
+    this.taxAmount = 0;
   }
   
   // Calculate total
