@@ -216,25 +216,44 @@ class OrderService {
     };
   }
 
-  // Get order by ID
-  async getOrderById(orderId) {
-    const order = await Order.findById(orderId)
-      .populate("customer")
-      .populate("godown", "name location contact")
-      .populate("createdBy", "firstName lastName")
-      .populate("approvedBy", "firstName lastName")
-      .populate("driverAssignment.driver", "firstName lastName phone")
+async getOrderById(orderId) {
+  const order = await Order.findById(orderId)
+    .populate("customer")
+    .populate("godown", "name location contact")
+    .populate("createdBy", "firstName lastName")
+    .populate("approvedBy", "firstName lastName")
+    .populate("driverAssignment.driver", "firstName lastName phone")
+    .lean();
+
+  if (!order) {
+    throw new Error("Order not found");
+  }
+
+  // Calculate customer's remaining (outstanding) value
+  if (order.customer?._id) {
+    const customerId = order.customer._id;
+
+    const outstandingOrders = await Order.find({
+      customer: customerId,
+      type: "order", // Only consider orders, not visits
+      paymentStatus: { $in: ["pending", "partial", "overdue"] },
+    })
+      .select("totalAmount paidAmount")
       .lean();
 
-    if (!order) {
-      throw new Error("Order not found");
-    }
+    const calculatedOutstanding = outstandingOrders.reduce((total, ord) => {
+      return total + (ord.totalAmount - (ord.paidAmount || 0));
+    }, 0);
 
-    return {
-      success: true,
-      data: { order },
-    };
+    // Attach outstanding amount to the customer data
+    order.customer.outstandingAmount = Math.max(0, calculatedOutstanding);
   }
+
+  return {
+    success: true,
+    data: { order },
+  };
+}
 
   // Create new order
   async createOrder(orderData, createdBy) {
