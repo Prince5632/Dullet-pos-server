@@ -40,7 +40,8 @@ const auditLogSchema = new mongoose.Schema({
       'reports',
       'settings',
       'auth',
-      'transits'
+      'transits',
+      "transactions"
     ]
   },
   resourceType: {

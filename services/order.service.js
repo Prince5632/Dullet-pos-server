@@ -1,5 +1,6 @@
 const { Order, Customer, Godown } = require("../models");
 const { AuditLog } = require("../models");
+const transactionService = require("./transaction.service");
 const {
   QUICK_PRODUCT_BASES,
   CITY_CONFIG,
@@ -332,6 +333,35 @@ async getOrderById(orderId) {
 
     await order.save();
 
+    // Record transaction if there's an initial payment
+    if (order.paidAmount && order.paidAmount > 0) {
+      try {
+        await transactionService.createTransaction({
+          transactionMode: order.paymentTerms || 'Cash',
+          transactionForModel: 'Order',
+          transactionFor: order._id,
+          customer: order.customer,
+          amountPaid: order.paidAmount,
+          transactionDate: new Date()
+        }, createdBy);
+        
+        // Log transaction creation in audit
+        await AuditLog.create({
+          user: createdBy,
+          action: "CREATE",
+          module: "transactions",
+          resourceType: "Transaction",
+          resourceId: order._id.toString(),
+          description: `Transaction recorded for order ${order.orderNumber} - Amount: ${order.paidAmount}`,
+          ipAddress: "0.0.0.0",
+          userAgent: "System",
+        });
+      } catch (transactionError) {
+        console.error('Error creating transaction for order:', transactionError);
+        // Don't fail the order creation if transaction recording fails
+      }
+    }
+
     // Update customer statistics
     await Customer.findByIdAndUpdate(orderData.customer, {
       $inc: { totalOrders: 1, totalOrderValue: order.totalAmount },
@@ -373,6 +403,40 @@ async getOrderById(orderId) {
     // Update order
     Object.assign(order, updateData, { updatedBy });
     await order.save();
+
+    // Record transaction if paidAmount increased
+    if (
+      typeof updateData.paidAmount === "number" &&
+      updateData.paidAmount !== oldPaidAmount &&
+      updateData.paidAmount > oldPaidAmount
+    ) {
+      const amountDifference = updateData.paidAmount - (oldPaidAmount || 0);
+      try {
+        await transactionService.createTransaction({
+          transactionMode: order.paymentTerms || 'Cash',
+          transactionForModel: 'Order',
+          transactionFor: order._id,
+          customer: order.customer,
+          amountPaid: amountDifference,
+          transactionDate: new Date()
+        }, updatedBy);
+        
+        // Log transaction creation in audit
+        await AuditLog.create({
+          user: updatedBy,
+          action: "CREATE",
+          module: "transactions",
+          resourceType: "Transaction",
+          resourceId: order._id.toString(),
+          description: `Transaction recorded for order ${order.orderNumber} - Additional payment: ${amountDifference}`,
+          ipAddress: "0.0.0.0",
+          userAgent: "System",
+        });
+      } catch (transactionError) {
+        console.error('Error creating transaction for order update:', transactionError);
+        // Don't fail the order update if transaction recording fails
+      }
+    }
 
     // Log the action
     // Determine resource type based on order type
@@ -951,9 +1015,44 @@ async getOrderById(orderId) {
     // Update payment fields
     order.paidAmount = newPaidAmount;
     order.paymentStatus = newPaymentStatus;
+    
+    // Update payment terms if provided
+    if (payload.paymentTerms && ['Cash', 'Credit', 'Advance', 'Cheque', 'Online'].includes(payload.paymentTerms)) {
+      order.paymentTerms = payload.paymentTerms;
+    }
+    
     order.updatedBy = user._id;
 
     await order.save();
+
+    // Record transaction if amount was collected during delivery
+    if (amountCollected > 0) {
+      try {
+        await transactionService.createTransaction({
+          transactionMode: payload.paymentTerms || order.paymentTerms || 'Cash',
+          transactionForModel: 'Order',
+          transactionFor: order._id,
+          customer: order.customer,
+          amountPaid: amountCollected,
+          transactionDate: new Date()
+        }, user._id);
+        
+        // Log transaction creation in audit
+        await AuditLog.create({
+          user: user._id,
+          action: "CREATE",
+          module: "transactions",
+          resourceType: "Transaction",
+          resourceId: order._id.toString(),
+          description: `Transaction recorded for order ${order.orderNumber} - Delivery collection: ${amountCollected}`,
+          ipAddress: "0.0.0.0",
+          userAgent: "System",
+        });
+      } catch (transactionError) {
+        console.error('Error creating transaction for delivery:', transactionError);
+        // Don't fail the delivery recording if transaction recording fails
+      }
+    }
 
     await AuditLog.create({
       user: user._id,

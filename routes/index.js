@@ -8,6 +8,7 @@ const inventoryRoutes = require('./inventory.routes');
 const auditRoutes = require('./audit.routes');
 const godownRoutes = require('./godown.routes');
 const transitRoutes = require('./transit.routes');
+const transactionRoutes = require('./transaction.routes');
 
 module.exports = {
   authRoutes,
@@ -19,5 +20,6 @@ module.exports = {
   inventoryRoutes,
   auditRoutes,
   godownRoutes,
-  transitRoutes
+  transitRoutes,
+  transactionRoutes
 };

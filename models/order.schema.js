@@ -198,7 +198,7 @@ const orderSchema = new mongoose.Schema({
   // Payment Information (for orders only)
   paymentTerms: {
     type: String,
-    enum: ['Cash', 'Credit', 'Advance'],
+    enum: ['Cash', 'Credit', 'Advance', 'Cheque', 'Online'],
     default: function() { return this.type === 'order' ? 'Cash' : undefined; },
     required: function() { return this.type === 'order'; }
   },

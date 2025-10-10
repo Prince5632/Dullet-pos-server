@@ -44,11 +44,20 @@ const sendPaginated = (res, data, pagination, message = 'Data retrieved successf
     pagination
   });
 };
+// utils/responseHelper.js
+ const createResponse = (success, message, data = null) => {
+  return {
+    success,
+    message,
+    ...(data && { data }),
+  };
+};
 
 module.exports = {
   sendSuccess,
   sendError,
   sendCreated,
   sendNoContent,
-  sendPaginated
+  sendPaginated,
+  createResponse
 };

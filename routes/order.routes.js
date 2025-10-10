@@ -521,9 +521,9 @@ router.get('/:id/audit-trail', authenticate, authorize('orders.read'), orderCont
  *                 type: number
  *                 example: 125
  *               paymentTerms:
- *                 type: string
- *                 enum: [Cash, Credit, Advance]
- *                 example: "Credit"
+                 type: string
+                 enum: [Cash, Credit, Advance, Cheque, Online]
+                 example: "Credit"
  *               requiredDate:
  *                 type: string
  *                 format: date
