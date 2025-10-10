@@ -74,7 +74,37 @@ const createTransit = async (req, res) => {
 // Update transit controller
 const updateTransit = async (req, res) => {
   try {
-    const result = await transitService.updateTransit(req.params.id, req.body, req.user);
+    // Parse FormData fields
+    const transitData = { ...req.body };
+    
+    // Parse JSON fields
+    if (transitData.productDetails && typeof transitData.productDetails === 'string') {
+      try {
+        transitData.productDetails = JSON.parse(transitData.productDetails);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid productDetails format"
+        });
+      }
+    }
+    
+    // Parse removedAttachments if provided
+    if (transitData.removedAttachments && typeof transitData.removedAttachments === 'string') {
+      try {
+        transitData.removedAttachments = JSON.parse(transitData.removedAttachments);
+      } catch (error) {
+        // If parsing fails, treat as comma-separated string
+        transitData.removedAttachments = transitData.removedAttachments.split(',').map(item => item.trim()).filter(item => item);
+      }
+    }
+    
+    // Add uploaded files
+    if (req.files && req.files.length > 0) {
+      transitData.newAttachments = req.files;
+    }
+    
+    const result = await transitService.updateTransit(req.params.id, transitData, req.user);
     res.status(200).json(result);
   } catch (error) {
     buildErrorResponse(res, error);
@@ -312,6 +342,19 @@ const getMyTransits = async (req, res) => {
   }
 };
 
+// Get transit audit trail
+const getTransitAuditTrail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    const result = await transitService.getTransitAuditTrail(id, parseInt(page), parseInt(limit));
+    res.status(200).json(result);
+  } catch (error) {
+    buildErrorResponse(res, error);
+  }
+};
+
 module.exports = {
   getAllTransits,
   getTransitById,
@@ -325,5 +368,6 @@ module.exports = {
   bulkUpdateTransitStatus,
   getTransitByTransitId,
   getPendingTransits,
-  getMyTransits
+  getMyTransits,
+  getTransitAuditTrail
 };

@@ -397,9 +397,56 @@ router.get('/:id', authenticate,authorize('transits.read'), transitController.ge
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
- *             $ref: '#/components/schemas/Transit'
+ *             type: object
+ *             properties:
+ *               fromLocation:
+ *                 type: string
+ *                 description: Source location name
+ *               toLocation:
+ *                 type: string
+ *                 description: Destination godown ID
+ *               dateOfDispatch:
+ *                 type: string
+ *                 format: date
+ *                 description: Date of dispatch
+ *               expectedArrivalDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Expected arrival date
+ *               vehicleNumber:
+ *                 type: string
+ *                 description: Vehicle number
+ *               vehicleType:
+ *                 type: string
+ *                 enum: [Truck, Mini Truck, Van, Other]
+ *                 description: Type of vehicle
+ *               driverId:
+ *                 type: string
+ *                 description: Driver user ID
+ *               assignedTo:
+ *                 type: string
+ *                 description: Assigned user ID
+ *               transporterName:
+ *                 type: string
+ *                 description: Transporter name
+ *               remarks:
+ *                 type: string
+ *                 description: Additional remarks
+ *               status:
+ *                 type: string
+ *                 enum: [New, In Transit, Received, Partially Received, Cancelled]
+ *                 description: Transit status
+ *               productDetails:
+ *                 type: string
+ *                 description: JSON string of product details array
+ *               attachments:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                 description: File attachments (max 10 files)
  *     responses:
  *       201:
  *         description: Transit created successfully
@@ -579,7 +626,110 @@ router.patch('/:id/assign-driver', authenticate,authorize('transits.update'), tr
  *       500:
  *         description: Internal server error
  */
-router.put('/:id', authenticate,authorize('transits.update'), transitController.updateTransit);
+router.put('/:id', authenticate,authorize('transits.update'), upload.array('attachments', 10), transitController.updateTransit);
+
+/**
+ * @swagger
+ * /api/transits/{id}/audit-trail:
+ *   get:
+ *     summary: Get transit audit trail
+ *     description: Retrieve the audit trail (activity log) for a specific transit
+ *     tags: [Transit Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Transit ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *           maximum: 50
+ *         description: Number of items per page (max 50)
+ *     responses:
+ *       200:
+ *         description: Transit audit trail retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Transit audit trail retrieved successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     activities:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                           user:
+ *                             type: object
+ *                             properties:
+ *                               firstName:
+ *                                 type: string
+ *                               lastName:
+ *                                 type: string
+ *                               email:
+ *                                 type: string
+ *                               employeeId:
+ *                                 type: string
+ *                           action:
+ *                             type: string
+ *                           module:
+ *                             type: string
+ *                           resourceType:
+ *                             type: string
+ *                           resourceId:
+ *                             type: string
+ *                           description:
+ *                             type: string
+ *                           metadata:
+ *                             type: object
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         currentPage:
+ *                           type: integer
+ *                         totalItems:
+ *                           type: integer
+ *                         itemsPerPage:
+ *                           type: integer
+ *                         totalPages:
+ *                           type: integer
+ *                         hasMore:
+ *                           type: boolean
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Transit not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/:id/audit-trail', authenticate, authorize('transits.read'), transitController.getTransitAuditTrail);
 
 /**
  * @swagger

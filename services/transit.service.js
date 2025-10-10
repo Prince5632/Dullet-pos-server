@@ -83,7 +83,6 @@ class TransitService {
 
     const [transits, total] = await Promise.all([
       Transit.find(filter)
-        .populate("fromLocation", "name address city")
         .populate("toLocation", "name address city")
         .populate("assignedTo", "firstName lastName email")
         .populate("driverId", "firstName lastName email phone")
@@ -110,7 +109,6 @@ class TransitService {
   // Get transit by ID
   async getTransitById(transitId) {
     const transit = await Transit.findById(transitId)
-      .populate("fromLocation", "name address city")
       .populate("toLocation", "name address city")
       .populate("assignedTo", "firstName lastName email")
       .populate("driverId", "firstName lastName email phone")
@@ -149,15 +147,8 @@ class TransitService {
       throw new Error("From location and to location cannot be the same");
     }
 
-    // Validate that fromLocation and toLocation exist
-    const [fromGodown, toGodown] = await Promise.all([
-      Godown.findById(transitData.fromLocation),
-      Godown.findById(transitData.toLocation),
-    ]);
-
-    if (!fromGodown) {
-      throw new Error("From location (godown) not found");
-    }
+    // Validate that toLocation exists (fromLocation is now a string)
+    const toGodown = await Godown.findById(transitData.toLocation);
 
     if (!toGodown) {
       throw new Error("To location (godown) not found");
@@ -217,10 +208,10 @@ class TransitService {
       module: "transits",
       resourceType: "Transit",
       resourceId: transit._id.toString(),
-      description: `Created transit ${transit.transitId} from ${fromGodown.name} to ${toGodown.name}`,
+      description: `Created transit ${transit.transitId} from ${transitData.fromLocation} to ${toGodown.name}`,
       metadata: {
         transitId: transit.transitId,
-        fromLocation: fromGodown.name,
+        fromLocation: transitData.fromLocation,
         toLocation: toGodown.name,
         vehicleNumber: transit.vehicleNumber,
       },
@@ -288,31 +279,43 @@ class TransitService {
       assignedTo: transit.assignedTo,
     };
 
-    // Process attachments if any
-    if (updateData.attachments && updateData.attachments.length > 0) {
-      const processedAttachments = [];
+    // Handle attachments properly
+    let finalAttachments = [...(transit.attachments || [])];
+    // Remove attachments that are marked for removal
+    if (updateData.removedAttachments && Array.isArray(updateData.removedAttachments)) {
+      finalAttachments = finalAttachments.filter(attachment => 
+  !updateData.removedAttachments.includes(attachment?._id?.toString())
+);
+
+    }
+    
+    // Process new attachments if any
+    if (updateData.newAttachments && updateData.newAttachments.length > 0) {
+      const processedNewAttachments = [];
       
-      for (const file of updateData.attachments) {
-        // Check if it's a new file upload (has buffer) or existing attachment
-        if (file.buffer) {
-          // Convert file buffer to base64
-          const base64Data = file.buffer.toString('base64');
-          
-          processedAttachments.push({
-            fileName: file.originalname,
-            fileType: file.mimetype,
-            fileSize: file.size,
-            base64Data: base64Data,
-            uploadedAt: new Date()
-          });
-        } else {
-          // Keep existing attachment as is
-          processedAttachments.push(file);
-        }
+      for (const file of updateData.newAttachments) {
+        // Convert file buffer to base64
+        const base64Data = file.buffer.toString('base64');
+        
+        processedNewAttachments.push({
+          fileName: file.originalname,
+          fileType: file.mimetype,
+          fileSize: file.size,
+          base64Data: base64Data,
+          uploadedAt: new Date()
+        });
       }
       
-      updateData.attachments = processedAttachments;
+      // Add new attachments to existing ones
+      finalAttachments = [...finalAttachments, ...processedNewAttachments];
     }
+    
+    // Update the attachments array
+    updateData.attachments = finalAttachments;
+    
+    // Clean up the temporary fields
+    delete updateData.newAttachments;
+    delete updateData.removedAttachments;
 
     // Update transit
     Object.assign(transit, updateData);
@@ -453,7 +456,6 @@ class TransitService {
 
 
     const transits = await Transit.find(filter)
-      .populate("fromLocation", "name address city")
       .populate("toLocation", "name address city")
       .populate("assignedTo", "name email")
       .populate("driverId", "firstName lastName email phone")
@@ -464,6 +466,39 @@ class TransitService {
     return {
       success: true,
       data: transits,
+    };
+  }
+
+  // Get transit audit trail
+  async getTransitAuditTrail(transitId, page = 1, limit = 20) {
+    // First check if transit exists
+    const transit = await Transit.findById(transitId);
+    if (!transit) {
+      throw new Error("Transit not found");
+    }
+
+    // Calculate skip value for pagination
+    const skip = (page - 1) * limit;
+
+    // Get audit trail for this transit with pagination
+    const result = await AuditLog.getResourceAuditTrail("Transit", transitId, {
+      limit,
+      skip,
+    });
+
+    return {
+      success: true,
+      message: "Transit audit trail retrieved successfully",
+      data: {
+        activities: result.logs,
+        pagination: {
+          currentPage: page,
+          totalItems: result.total,
+          itemsPerPage: limit,
+          totalPages: Math.ceil(result.total / limit),
+          hasMore: result.hasMore,
+        },
+      },
     };
   }
 }

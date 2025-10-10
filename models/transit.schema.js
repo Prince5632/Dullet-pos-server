@@ -33,9 +33,9 @@ const transitSchema = new mongoose.Schema(
       index: true,
     },
     fromLocation: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Godown",
+      type: String,
       required: true,
+      trim: true,
     },
     toLocation: {
       type: mongoose.Schema.Types.ObjectId,
