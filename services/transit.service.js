@@ -37,7 +37,7 @@ class TransitService {
     }
 
     if (fromLocation) {
-      filter.fromLocation = fromLocation;
+      filter.fromLocation = { $regex: fromLocation, $options: "i" };
     }
 
     if (toLocation) {
@@ -56,14 +56,18 @@ class TransitService {
       filter.driverId = driverId;
     }
 
-    // Date range filter
+
+     // Date range filter
     if (dateFrom || dateTo) {
       filter.dateOfDispatch = {};
       if (dateFrom) {
         filter.dateOfDispatch.$gte = new Date(dateFrom);
       }
       if (dateTo) {
-        filter.dateOfDispatch.$lte = new Date(dateTo);
+        // Set end date to end of day (23:59:59.999) to include all orders on that date
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        filter.dateOfDispatch.$lte = endDate;
       }
     }
 
@@ -234,7 +238,7 @@ class TransitService {
 
     // Validate status transitions
     const validStatusTransitions = {
-      "New": ["In Transit", "Cancelled"],
+      "Pending": ["In Transit", "Cancelled"],
       "In Transit": ["Received", "Partially Received", "Cancelled"],
       "Partially Received": ["Received", "Cancelled"],
       "Received": [],
@@ -352,9 +356,9 @@ class TransitService {
     }
 
 
-    // Check if transit can be deleted (only New or Cancelled transits)
-    if (!["New", "Cancelled"].includes(transit.status)) {
-      throw new Error("Only transits with status 'New' or 'Cancelled' can be deleted");
+    // Check if transit can be deleted (only Pending or Cancelled transits)
+    if (!["Pending", "Cancelled"].includes(transit.status)) {
+      throw new Error("Only transits with status 'Pending' or 'Cancelled' can be deleted");
     }
 
     await Transit.findByIdAndDelete(transitId);
@@ -393,6 +397,15 @@ class TransitService {
   async getTransitStats(currentUser) {
     const filter = {};
 
+    // Role-based filtering
+    if (currentUser.role?.name?.toLowerCase() !== "super admin") {
+      // Regular users can only see stats for transits assigned to them or created by them
+      filter.$or = [
+        { assignedTo: currentUser._id },
+        { createdBy: currentUser._id },
+        { driverId: currentUser._id },
+      ];
+    }
 
     const stats = await Transit.aggregate([
       { $match: filter },
@@ -406,7 +419,7 @@ class TransitService {
 
     // Initialize counts for all possible statuses
     const statusCounts = {
-      new: 0,
+      pending: 0,
       inTransit: 0,
       received: 0,
       partiallyReceived: 0,
@@ -416,8 +429,8 @@ class TransitService {
     // Map server status names to client expected names
     stats.forEach((stat) => {
       const status = stat._id;
-      if (status === 'New') {
-        statusCounts.new = stat.count;
+      if (status === 'Pending') {
+        statusCounts.pending = stat.count;
       } else if (status === 'In Transit') {
         statusCounts.inTransit = stat.count;
       } else if (status === 'Received') {
@@ -435,7 +448,7 @@ class TransitService {
       success: true,
       data: {
         total,
-        new: statusCounts.new,
+        pending: statusCounts.pending,
         inTransit: statusCounts.inTransit,
         received: statusCounts.received,
         partiallyReceived: statusCounts.partiallyReceived,
@@ -454,6 +467,28 @@ class TransitService {
       filter.toLocation = locationId;
     }
 
+    // Role-based filtering
+    if (currentUser.role?.name?.toLowerCase() !== "super admin") {
+      // Regular users can only see transits assigned to them or created by them
+      const userFilter = {
+        $or: [
+          { assignedTo: currentUser._id },
+          { createdBy: currentUser._id },
+          { driverId: currentUser._id },
+        ]
+      };
+      
+      // Combine location filter with user access filter
+      filter.$and = [
+        // Keep the original location filter
+        type === "from" ? { fromLocation: locationId } : { toLocation: locationId },
+        userFilter
+      ];
+      
+      // Remove the individual location filters since we're using $and
+      delete filter.fromLocation;
+      delete filter.toLocation;
+    }
 
     const transits = await Transit.find(filter)
       .populate("toLocation", "name address city")

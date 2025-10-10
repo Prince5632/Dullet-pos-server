@@ -133,7 +133,7 @@ const updateTransitStatus = async (req, res) => {
       });
     }
 
-    const validStatuses = ['New', 'In Transit', 'Received', 'Partially Received', 'Cancelled'];
+    const validStatuses = ['Pending', 'In Transit', 'Received', 'Partially Received', 'Cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
@@ -216,7 +216,7 @@ const bulkUpdateTransitStatus = async (req, res) => {
       });
     }
 
-    const validStatuses = ['New', 'In Transit', 'Received', 'Partially Received', 'Cancelled'];
+    const validStatuses = ['Pending', 'In Transit', 'Received', 'Partially Received', 'Cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
@@ -288,12 +288,12 @@ const getTransitByTransitId = async (req, res) => {
   }
 };
 
-// Get pending transits (New and In Transit)
+// Get pending transits (Pending and In Transit)
 const getPendingTransits = async (req, res) => {
   try {
     const query = {
       ...req.query,
-      status: req.query.status || 'New,In Transit'
+      status: req.query.status || 'Pending,In Transit'
     };
 
     // Convert comma-separated status to array for filtering

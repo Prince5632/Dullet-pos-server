@@ -99,8 +99,8 @@ const transitSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["New", "In Transit", "Received", "Partially Received", "Cancelled"],
-      default: "New",
+      enum: ["Pending", "In Transit", "Received", "Partially Received", "Cancelled"],
+      default: "Pending",
     },
   },
   {
