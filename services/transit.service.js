@@ -87,6 +87,7 @@ class TransitService {
 
     const [transits, total] = await Promise.all([
       Transit.find(filter)
+        .select("-attachments")
         .populate("toLocation", "name address city")
         .populate("assignedTo", "firstName lastName email")
         .populate("driverId", "firstName lastName email phone")
@@ -117,6 +118,9 @@ class TransitService {
       .populate("assignedTo", "firstName lastName email")
       .populate("driverId", "firstName lastName email phone")
       .populate("createdBy", "firstName lastName email")
+      .populate("partiallyReceivedBy", "firstName lastName email")
+      .populate("receivedBy", "firstName lastName email")
+      .populate("statusHistory.changedBy", "firstName lastName email")
       .lean();
 
     if (!transit) {
@@ -432,6 +436,14 @@ if(!updateData.assignedTo){
 
     // Update the status
     transit.status = status;
+    
+    // Set user fields based on status
+    if (status === "Partially Received") {
+      transit.partiallyReceivedBy = currentUser._id;
+    } else if (status === "Received") {
+      transit.receivedBy = currentUser._id;
+    }
+    
     await transit.save();
 
     // Log audit trail

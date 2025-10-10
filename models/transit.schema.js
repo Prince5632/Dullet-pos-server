@@ -69,6 +69,14 @@ const transitSchema = new mongoose.Schema(
       ref: "User",
       required:true,
     },
+    partiallyReceivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    receivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
     productDetails: {
       type: [productDetailSchema],
       required: true,
