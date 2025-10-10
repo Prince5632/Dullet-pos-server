@@ -138,6 +138,8 @@ class TransitService {
       "dateOfDispatch",
       "vehicleNumber",
       "productDetails",
+      "assignedTo",
+      "driverId",
     ];
 
     for (const field of requiredFields) {
@@ -257,6 +259,12 @@ class TransitService {
       if (updateData.fromLocation === updateData.toLocation) {
         throw new Error("From location and to location cannot be the same");
       }
+    }
+    if(!updateData.driverId){
+      throw new Error("Driver assignment is required");
+    }
+if(!updateData.assignedTo){
+      throw new Error("Manager assignment is required");
     }
 
     // Validate driver if being updated
@@ -384,8 +392,69 @@ class TransitService {
   }
 
   // Update transit status
-  async updateTransitStatus(transitId, status, currentUser) {
-    return await this.updateTransit(transitId, { status }, currentUser);
+  async updateTransitStatus(transitId, status, currentUser, notes = "") {
+    const transit = await Transit.findById(transitId);
+
+    if (!transit) {
+      throw new Error("Transit not found");
+    }
+
+    // Validate status transitions
+    const validStatusTransitions = {
+      "Pending": ["In Transit", "Cancelled"],
+      "In Transit": ["Received", "Partially Received", "Cancelled"],
+      "Partially Received": ["Received", "Cancelled"],
+      "Received": [],
+      "Cancelled": [],
+    };
+
+    if (status !== transit.status) {
+      const allowedTransitions = validStatusTransitions[transit.status] || [];
+      if (!allowedTransitions.includes(status)) {
+        throw new Error(`Cannot change status from ${transit.status} to ${status}`);
+      }
+
+      // Add to status history
+      const statusHistoryEntry = {
+        status: status,
+        notes: notes || "",
+        changedBy: currentUser._id,
+        changedAt: new Date()
+      };
+
+      // Initialize statusHistory array if it doesn't exist
+      if (!transit.statusHistory) {
+        transit.statusHistory = [];
+      }
+
+      transit.statusHistory.push(statusHistoryEntry);
+    }
+
+    // Update the status
+    transit.status = status;
+    await transit.save();
+
+    // Log audit trail
+    await AuditLog.create({
+      user: currentUser._id,
+      action: "UPDATE",
+      module: "transits",
+      resourceType: "Transit",
+      resourceId: transit._id.toString(),
+      description: `Updated transit status to ${status}`,
+      metadata: {
+        transitId: transit.transitId,
+        newStatus: status,
+        notes: notes,
+        previousStatus: transit.status,
+      },
+    });
+
+    return {
+      success: true,
+      message: "Transit status updated successfully",
+      data: await this.getTransitById(transit._id),
+    };
   }
 
   // Assign driver to transit

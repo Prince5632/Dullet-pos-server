@@ -124,7 +124,7 @@ const deleteTransit = async (req, res) => {
 // Update transit status controller
 const updateTransitStatus = async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, notes } = req.body;
     
     if (!status) {
       return res.status(400).json({
@@ -141,7 +141,7 @@ const updateTransitStatus = async (req, res) => {
       });
     }
 
-    const result = await transitService.updateTransitStatus(req.params.id, status, req.user);
+    const result = await transitService.updateTransitStatus(req.params.id, status, req.user, notes);
     res.status(200).json(result);
   } catch (error) {
     buildErrorResponse(res, error);
@@ -200,7 +200,7 @@ const getTransitsByLocation = async (req, res) => {
 // Bulk update transit status controller
 const bulkUpdateTransitStatus = async (req, res) => {
   try {
-    const { transitIds, status } = req.body;
+    const { transitIds, status, notes } = req.body;
 
     if (!transitIds || !Array.isArray(transitIds) || transitIds.length === 0) {
       return res.status(400).json({
@@ -229,7 +229,7 @@ const bulkUpdateTransitStatus = async (req, res) => {
 
     for (const transitId of transitIds) {
       try {
-        const result = await transitService.updateTransitStatus(transitId, status, req.user);
+        const result = await transitService.updateTransitStatus(transitId, status, req.user, notes);
         results.push({ transitId, success: true, data: result.data });
       } catch (error) {
         errors.push({ transitId, success: false, message: error.message });

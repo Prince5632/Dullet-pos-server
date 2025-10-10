@@ -14,7 +14,7 @@ const productDetailSchema = new mongoose.Schema(
     },
     unit: {
       type: String,
-      enum:  ['KG', 'Quintal', 'Ton', 'Bags'],
+      enum:  ['KG', 'Quintal', 'Ton', 'Bags',"40Kg Bags"],
       required: true,
     },
     additionalNote: {
@@ -61,11 +61,13 @@ const transitSchema = new mongoose.Schema(
     driverId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: true,
     },
    
     assignedTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required:true,
     },
     productDetails: {
       type: [productDetailSchema],
@@ -102,6 +104,28 @@ const transitSchema = new mongoose.Schema(
       enum: ["Pending", "In Transit", "Received", "Partially Received", "Cancelled"],
       default: "Pending",
     },
+    statusHistory: [
+      {
+        status: {
+          type: String,
+          enum: ["Pending", "In Transit", "Received", "Partially Received", "Cancelled"],
+          required: true,
+        },
+        notes: {
+          type: String,
+          trim: true,
+        },
+        changedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        changedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   {
     timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" },
