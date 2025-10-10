@@ -85,10 +85,9 @@ class TransitService {
       Transit.find(filter)
         .populate("fromLocation", "name address city")
         .populate("toLocation", "name address city")
-        .populate("assignedTo", "name email")
-        .populate("driverId", "name email phone")
-        .populate("createdBy", "name email")
-        .populate("productDetails.productId", "name")
+        .populate("assignedTo", "firstName lastName email")
+        .populate("driverId", "firstName lastName email phone")
+        .populate("createdBy", "firstName lastName email")
         .sort(sortOptions)
         .skip(skip)
         .limit(parseInt(limit))
@@ -113,10 +112,9 @@ class TransitService {
     const transit = await Transit.findById(transitId)
       .populate("fromLocation", "name address city")
       .populate("toLocation", "name address city")
-      .populate("assignedTo", "name email")
-      .populate("driverId", "name email phone")
-      .populate("createdBy", "name email")
-      .populate("productDetails.productId", "name")
+      .populate("assignedTo", "firstName lastName email")
+      .populate("driverId", "firstName lastName email phone")
+      .populate("createdBy", "firstName lastName email")
       .lean();
 
     if (!transit) {
@@ -189,16 +187,38 @@ class TransitService {
     // Set createdBy to current user
     transitData.createdBy = currentUser._id;
 
+    // Process attachments if any
+    if (transitData.attachments && transitData.attachments.length > 0) {
+      const processedAttachments = [];
+      
+      for (const file of transitData.attachments) {
+        // Convert file buffer to base64
+        const base64Data = file.buffer.toString('base64');
+        
+        processedAttachments.push({
+          fileName: file.originalname,
+          fileType: file.mimetype,
+          fileSize: file.size,
+          base64Data: base64Data,
+          uploadedAt: new Date()
+        });
+      }
+      
+      transitData.attachments = processedAttachments;
+    }
+
     const transit = new Transit(transitData);
     await transit.save();
 
     // Log audit trail
     await AuditLog.create({
+      user: currentUser._id,
       action: "CREATE",
-      resource: "Transit",
-      resourceId: transit._id,
-      userId: currentUser._id,
-      details: {
+      module: "transits",
+      resourceType: "Transit",
+      resourceId: transit._id.toString(),
+      description: `Created transit ${transit.transitId} from ${fromGodown.name} to ${toGodown.name}`,
+      metadata: {
         transitId: transit.transitId,
         fromLocation: fromGodown.name,
         toLocation: toGodown.name,
@@ -219,15 +239,6 @@ class TransitService {
 
     if (!transit) {
       throw new Error("Transit not found");
-    }
-
-    // Check permissions
-    if (
-      currentUser.role?.name?.toLowerCase() !== "super admin" &&
-      transit.createdBy.toString() !== currentUser._id.toString() &&
-      transit.assignedTo?.toString() !== currentUser._id.toString()
-    ) {
-      throw new Error("Access denied. You can only update transits assigned to you or created by you");
     }
 
     // Validate status transitions
@@ -277,17 +288,45 @@ class TransitService {
       assignedTo: transit.assignedTo,
     };
 
+    // Process attachments if any
+    if (updateData.attachments && updateData.attachments.length > 0) {
+      const processedAttachments = [];
+      
+      for (const file of updateData.attachments) {
+        // Check if it's a new file upload (has buffer) or existing attachment
+        if (file.buffer) {
+          // Convert file buffer to base64
+          const base64Data = file.buffer.toString('base64');
+          
+          processedAttachments.push({
+            fileName: file.originalname,
+            fileType: file.mimetype,
+            fileSize: file.size,
+            base64Data: base64Data,
+            uploadedAt: new Date()
+          });
+        } else {
+          // Keep existing attachment as is
+          processedAttachments.push(file);
+        }
+      }
+      
+      updateData.attachments = processedAttachments;
+    }
+
     // Update transit
     Object.assign(transit, updateData);
     await transit.save();
 
     // Log audit trail
     await AuditLog.create({
+      user: currentUser._id,
       action: "UPDATE",
-      resource: "Transit",
-      resourceId: transit._id,
-      userId: currentUser._id,
-      details: {
+      module: "transits",
+      resourceType: "Transit",
+      resourceId: transit._id.toString(),
+      description: `Updated transit ${transit.transitId}`,
+      metadata: {
         transitId: transit.transitId,
         changes: updateData,
         originalData,
@@ -309,13 +348,6 @@ class TransitService {
       throw new Error("Transit not found");
     }
 
-    // Check permissions - only super admin or creator can delete
-    if (
-      currentUser.role?.name?.toLowerCase() !== "super admin" &&
-      transit.createdBy.toString() !== currentUser._id.toString()
-    ) {
-      throw new Error("Access denied. Only super admin or transit creator can delete transits");
-    }
 
     // Check if transit can be deleted (only New or Cancelled transits)
     if (!["New", "Cancelled"].includes(transit.status)) {
@@ -326,11 +358,13 @@ class TransitService {
 
     // Log audit trail
     await AuditLog.create({
+      user: currentUser._id,
       action: "DELETE",
-      resource: "Transit",
-      resourceId: transitId,
-      userId: currentUser._id,
-      details: {
+      module: "transits",
+      resourceType: "Transit",
+      resourceId: transitId.toString(),
+      description: `Deleted transit ${transit.transitId} with status ${transit.status}`,
+      metadata: {
         transitId: transit.transitId,
         status: transit.status,
       },
@@ -356,14 +390,6 @@ class TransitService {
   async getTransitStats(currentUser) {
     const filter = {};
 
-    // Role-based filtering
-    if (currentUser.role?.name?.toLowerCase() !== "super admin") {
-      filter.$or = [
-        { assignedTo: currentUser._id },
-        { createdBy: currentUser._id },
-        { driverId: currentUser._id },
-      ];
-    }
 
     const stats = await Transit.aggregate([
       { $match: filter },
@@ -375,25 +401,42 @@ class TransitService {
       },
     ]);
 
+    // Initialize counts for all possible statuses
     const statusCounts = {
-      "New": 0,
-      "In Transit": 0,
-      "Received": 0,
-      "Partially Received": 0,
-      "Cancelled": 0,
+      new: 0,
+      inTransit: 0,
+      received: 0,
+      partiallyReceived: 0,
+      cancelled: 0,
     };
 
+    // Map server status names to client expected names
     stats.forEach((stat) => {
-      statusCounts[stat._id] = stat.count;
+      const status = stat._id;
+      if (status === 'New') {
+        statusCounts.new = stat.count;
+      } else if (status === 'In Transit') {
+        statusCounts.inTransit = stat.count;
+      } else if (status === 'Received') {
+        statusCounts.received = stat.count;
+      } else if (status === 'Partially Received') {
+        statusCounts.partiallyReceived = stat.count;
+      } else if (status === 'Cancelled') {
+        statusCounts.cancelled = stat.count;
+      }
     });
 
-    const totalTransits = Object.values(statusCounts).reduce((sum, count) => sum + count, 0);
+    const total = Object.values(statusCounts).reduce((sum, count) => sum + count, 0);
 
     return {
       success: true,
       data: {
-        statusCounts,
-        totalTransits,
+        total,
+        new: statusCounts.new,
+        inTransit: statusCounts.inTransit,
+        received: statusCounts.received,
+        partiallyReceived: statusCounts.partiallyReceived,
+        cancelled: statusCounts.cancelled,
       },
     };
   }
@@ -408,21 +451,13 @@ class TransitService {
       filter.toLocation = locationId;
     }
 
-    // Role-based filtering
-    if (currentUser.role?.name?.toLowerCase() !== "super admin") {
-      filter.$or = [
-        { assignedTo: currentUser._id },
-        { createdBy: currentUser._id },
-        { driverId: currentUser._id },
-      ];
-    }
 
     const transits = await Transit.find(filter)
       .populate("fromLocation", "name address city")
       .populate("toLocation", "name address city")
       .populate("assignedTo", "name email")
-      .populate("driverId", "name email phone")
-      .populate("createdBy", "name email")
+      .populate("driverId", "firstName lastName email phone")
+      .populate("createdBy", "firstName lastName email")
       .sort({ createdAt: -1 })
       .lean();
 

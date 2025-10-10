@@ -44,7 +44,27 @@ const getTransitById = async (req, res) => {
 // Create transit controller
 const createTransit = async (req, res) => {
   try {
-    const result = await transitService.createTransit(req.body, req.user);
+    // Parse FormData fields
+    const transitData = { ...req.body };
+    
+    // Parse JSON fields
+    if (transitData.productDetails && typeof transitData.productDetails === 'string') {
+      try {
+        transitData.productDetails = JSON.parse(transitData.productDetails);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid productDetails format"
+        });
+      }
+    }
+    
+    // Add uploaded files
+    if (req.files && req.files.length > 0) {
+      transitData.attachments = req.files;
+    }
+    
+    const result = await transitService.createTransit(transitData, req.user);
     res.status(201).json(result);
   } catch (error) {
     buildErrorResponse(res, error);

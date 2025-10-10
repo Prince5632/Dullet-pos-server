@@ -209,7 +209,7 @@ const upload = multer({
  *       500:
  *         description: Internal server error
  */
-router.get('/', authenticate, transitController.getAllTransits);
+router.get('/', authenticate,authorize('transits.read'), transitController.getAllTransits);
 
 /**
  * @swagger
@@ -228,7 +228,7 @@ router.get('/', authenticate, transitController.getAllTransits);
  *       500:
  *         description: Internal server error
  */
-router.get('/stats', authenticate, transitController.getTransitStats);
+router.get('/stats', authenticate,authorize('transits.read'), transitController.getTransitStats);
 
 /**
  * @swagger
@@ -260,7 +260,7 @@ router.get('/stats', authenticate, transitController.getTransitStats);
  *       500:
  *         description: Internal server error
  */
-router.get('/pending', authenticate, transitController.getPendingTransits);
+router.get('/pending', authenticate,authorize('transits.read'), transitController.getPendingTransits);
 
 /**
  * @swagger
@@ -292,7 +292,7 @@ router.get('/pending', authenticate, transitController.getPendingTransits);
  *       500:
  *         description: Internal server error
  */
-router.get('/my', authenticate, transitController.getMyTransits);
+router.get('/my', authenticate,authorize('transits.read'), transitController.getMyTransits);
 
 /**
  * @swagger
@@ -327,7 +327,7 @@ router.get('/my', authenticate, transitController.getMyTransits);
  *       500:
  *         description: Internal server error
  */
-router.get('/location/:locationId', authenticate, transitController.getTransitsByLocation);
+router.get('/location/:locationId', authenticate,authorize('transits.read'), transitController.getTransitsByLocation);
 
 /**
  * @swagger
@@ -355,7 +355,7 @@ router.get('/location/:locationId', authenticate, transitController.getTransitsB
  *       500:
  *         description: Internal server error
  */
-router.get('/transit-id/:transitId', authenticate, transitController.getTransitByTransitId);
+router.get('/transit-id/:transitId', authenticate,authorize('transits.read'), transitController.getTransitByTransitId);
 
 /**
  * @swagger
@@ -383,7 +383,7 @@ router.get('/transit-id/:transitId', authenticate, transitController.getTransitB
  *       500:
  *         description: Internal server error
  */
-router.get('/:id', authenticate, transitController.getTransitById);
+router.get('/:id', authenticate,authorize('transits.read'), transitController.getTransitById);
 
 /**
  * @swagger
@@ -412,7 +412,7 @@ router.get('/:id', authenticate, transitController.getTransitById);
  *       500:
  *         description: Internal server error
  */
-router.post('/', authenticate, transitController.createTransit);
+router.post('/', authenticate,authorize('transits.create'), upload.array('attachments', 10), transitController.createTransit);
 
 /**
  * @swagger
@@ -452,7 +452,7 @@ router.post('/', authenticate, transitController.createTransit);
  *       500:
  *         description: Internal server error
  */
-router.patch('/bulk-status', authenticate, transitController.bulkUpdateTransitStatus);
+router.patch('/bulk-status', authenticate,authorize('transits.update'), transitController.bulkUpdateTransitStatus);
 
 /**
  * @swagger
@@ -497,7 +497,7 @@ router.patch('/bulk-status', authenticate, transitController.bulkUpdateTransitSt
  *       500:
  *         description: Internal server error
  */
-router.patch('/:id/status', authenticate, transitController.updateTransitStatus);
+router.patch('/:id/status', authenticate,authorize('transits.update'), transitController.updateTransitStatus);
 
 /**
  * @swagger
@@ -541,7 +541,7 @@ router.patch('/:id/status', authenticate, transitController.updateTransitStatus)
  *       500:
  *         description: Internal server error
  */
-router.patch('/:id/assign-driver', authenticate, transitController.assignDriver);
+router.patch('/:id/assign-driver', authenticate,authorize('transits.update'), transitController.assignDriver);
 
 /**
  * @swagger
@@ -579,7 +579,7 @@ router.patch('/:id/assign-driver', authenticate, transitController.assignDriver)
  *       500:
  *         description: Internal server error
  */
-router.put('/:id', authenticate, transitController.updateTransit);
+router.put('/:id', authenticate,authorize('transits.update'), transitController.updateTransit);
 
 /**
  * @swagger
@@ -611,6 +611,6 @@ router.put('/:id', authenticate, transitController.updateTransit);
  *       500:
  *         description: Internal server error
  */
-router.delete('/:id', authenticate, authorizePermissionOrRole(['super admin']), transitController.deleteTransit);
+router.delete('/:id', authenticate,authorize('transits.delete'), transitController.deleteTransit);
 
 module.exports = router;

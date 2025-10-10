@@ -2,11 +2,6 @@ const mongoose = require("mongoose");
 
 const productDetailSchema = new mongoose.Schema(
   {
-    productId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Product",
-      required: true,
-    },
     productName: {
       type: String,
       required: true,
@@ -19,7 +14,7 @@ const productDetailSchema = new mongoose.Schema(
     },
     unit: {
       type: String,
-      enum: ["Kg", "Quintal"],
+      enum:  ['KG', 'Quintal', 'Ton', 'Bags'],
       required: true,
     },
     additionalNote: {
@@ -90,8 +85,11 @@ const transitSchema = new mongoose.Schema(
     },
     attachments: [
       {
-        fileName: { type: String },
-        fileUrl: { type: String },
+        fileName: { type: String, required: true },
+        fileType: { type: String, required: true },
+        fileSize: { type: Number, required: true },
+        base64Data: { type: String, required: true },
+        uploadedAt: { type: Date, default: Date.now },
       },
     ],
     createdBy: {
