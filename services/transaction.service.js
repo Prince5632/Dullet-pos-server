@@ -116,9 +116,14 @@ class TransactionService {
         transactionDate
       } = transactionData;
 
+      // Normalize transactionFor to an array
+      const transactionForArray = Array.isArray(transactionFor)
+        ? transactionFor
+        : (transactionFor ? [transactionFor] : []);
+
       // Validate required fields
-      if (!transactionMode || !transactionForModel || !transactionFor || !amountPaid) {
-        return createResponse(false, 'Missing required fields: transactionMode, transactionForModel, transactionFor, amountPaid', null, 400);
+      if (!transactionMode || !transactionForModel || transactionForArray.length === 0 || !amountPaid) {
+        return createResponse(false, 'Missing required fields: transactionMode, transactionForModel, transactionFor (array), amountPaid', null, 400);
       }
 
       // Validate transaction mode
@@ -142,7 +147,7 @@ class TransactionService {
       const newTransaction = new Transaction({
         transactionMode,
         transactionForModel,
-        transactionFor,
+        transactionFor: transactionForArray,
         customer,
         amountPaid,
         createdBy: userId,

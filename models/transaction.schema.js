@@ -28,12 +28,14 @@ const transactionSchema = new Schema(
       enum: ["Order", "Customer"],
     },
 
-    // Reference ID dynamically linked to above model
-    transactionFor: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: true,
-      refPath: "transactionForModel", // dynamically reference Order or Customer
-    },
+    // Reference IDs dynamically linked to above model (array)
+    transactionFor: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true,
+        refPath: "transactionForModel", // dynamically reference Order or Customer
+      },
+    ],
 
     // Optional: also store customerId to make queries faster
     customer: {

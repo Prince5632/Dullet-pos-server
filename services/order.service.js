@@ -339,7 +339,7 @@ async getOrderById(orderId) {
         await transactionService.createTransaction({
           transactionMode: order.paymentTerms || 'Cash',
           transactionForModel: 'Order',
-          transactionFor: order._id,
+          transactionFor: [order._id],
           customer: order.customer,
           amountPaid: order.paidAmount,
           transactionDate: new Date()
@@ -415,7 +415,7 @@ async getOrderById(orderId) {
         await transactionService.createTransaction({
           transactionMode: order.paymentTerms || 'Cash',
           transactionForModel: 'Order',
-          transactionFor: order._id,
+          transactionFor: [order._id],
           customer: order.customer,
           amountPaid: amountDifference,
           transactionDate: new Date()
@@ -1031,7 +1031,7 @@ async getOrderById(orderId) {
         await transactionService.createTransaction({
           transactionMode: payload.paymentTerms || order.paymentTerms || 'Cash',
           transactionForModel: 'Order',
-          transactionFor: order._id,
+          transactionFor: [order._id],
           customer: order.customer,
           amountPaid: amountCollected,
           transactionDate: new Date()

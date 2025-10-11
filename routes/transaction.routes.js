@@ -94,7 +94,9 @@ const router = express.Router();
  *                             type: string
  *                             enum: [Order, Customer]
  *                           transactionFor:
- *                             type: string
+ *                             type: array
+ *                             items:
+ *                               type: string
  *                           customer:
  *                             type: object
  *                           createdBy:
@@ -169,7 +171,9 @@ router.get('/', authenticate, transactionController.getAllTransactions);
  *                           type: string
  *                           enum: [Order, Customer]
  *                         transactionFor:
- *                           type: object
+ *                           type: array
+ *                           items:
+ *                             type: object
  *                         customer:
  *                           type: object
  *                         createdBy:
@@ -217,8 +221,10 @@ router.get('/:id', authenticate, transactionController.getTransactionById);
  *                 enum: [Order, Customer]
  *                 description: Type of reference (Order or Customer)
  *               transactionFor:
- *                 type: string
- *                 description: ID of the referenced Order or Customer
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: IDs of the referenced Orders or Customers
  *               customer:
  *                 type: string
  *                 description: Customer ID (optional, helps with queries)
