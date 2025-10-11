@@ -1,6 +1,6 @@
-const godownService = require('../services/godown.service');
-const { Order, Inventory } = require('../models');
-const mongoose = require('mongoose');
+const godownService = require("../services/godown.service");
+const { Order, Inventory } = require("../models");
+const mongoose = require("mongoose");
 
 const createGodown = async (req, res) => {
   try {
@@ -18,21 +18,25 @@ const getGodowns = async (req, res) => {
     const result = await godownService.getGodowns(req.query, userId); // [memory:1][memory:2]
 
     const godowns = result?.data?.godowns || []; // [memory:1]
-    let godownIds = godowns.map(g => g._id); // [memory:1]
+    let godownIds = godowns.map((g) => g._id); // [memory:1]
 
     // Scope counts to the requesting user's assigned godowns when available
     // If the auth token includes user details with primaryGodown/accesssibleGodowns, use those
     const assignedIds = [];
-    const primary = req.user && req.user.primaryGodown ? req.user.primaryGodown : null;
-    const accessible = req.user && Array.isArray(req.user.accessibleGodowns) ? req.user.accessibleGodowns : [];
+    const primary =
+      req.user && req.user.primaryGodown ? req.user.primaryGodown : null;
+    const accessible =
+      req.user && Array.isArray(req.user.accessibleGodowns)
+        ? req.user.accessibleGodowns
+        : [];
 
     if (primary) assignedIds.push(primary);
     if (accessible && accessible.length > 0) assignedIds.push(...accessible);
 
     if (assignedIds.length > 0) {
       // Restrict counts to intersection of returned godowns and user's assigned godowns
-      const assignedSet = new Set(assignedIds.map(id => id.toString()));
-      godownIds = godownIds.filter(id => assignedSet.has(id.toString()));
+      const assignedSet = new Set(assignedIds.map((id) => id.toString()));
+      godownIds = godownIds.filter((id) => assignedSet.has(id.toString()));
     }
 
     // Prepare maps
@@ -43,10 +47,12 @@ const getGodowns = async (req, res) => {
     if (godownIds.length > 0) {
       // Build filter for counting based on query parameters
       const countFilter = { godown: { $in: godownIds } };
-      
+
       // Apply search filter
       if (req.query.search) {
-        countFilter.$or = [{ orderNumber: { $regex: req.query.search, $options: "i" } }];
+        countFilter.$or = [
+          { orderNumber: { $regex: req.query.search, $options: "i" } },
+        ];
       }
 
       // Apply status filter
@@ -61,7 +67,9 @@ const getGodowns = async (req, res) => {
 
       // Apply customer filter
       if (req.query.customerId) {
-        countFilter.customer = new mongoose.Types.ObjectId(req.query.customerId);
+        countFilter.customer = new mongoose.Types.ObjectId(
+          req.query.customerId
+        );
       }
 
       // Apply priority filter
@@ -104,32 +112,35 @@ const getGodowns = async (req, res) => {
       }
 
       if (req.query.hasImage) {
-        if (req.query.hasImage === 'true') {
+        if (req.query.hasImage === "true") {
           countFilter.capturedImage = { $exists: true, $ne: null };
-        } else if (req.query.hasImage === 'false') {
+        } else if (req.query.hasImage === "false") {
           countFilter.$or = [
             { capturedImage: { $exists: false } },
-            { capturedImage: null }
+            { capturedImage: null },
           ];
         }
       }
 
       if (req.query.address) {
-        countFilter['captureLocation.address'] = { $regex: req.query.address, $options: "i" };
+        countFilter["captureLocation.address"] = {
+          $regex: req.query.address,
+          $options: "i",
+        };
       }
 
       // Apply consistent filtering with Sales Executive Reports
       // Exclude cancelled and rejected orders/visits
-      const baseOrderFilter = { 
-        ...countFilter, 
-        type: 'order',
-        status: { $nin: ['cancelled', 'rejected'] }
+      const baseOrderFilter = {
+        ...countFilter,
+        type: "order",
+        // status: { $nin: ["cancelled", "rejected"] },
       };
 
-      const baseVisitFilter = { 
-        ...countFilter, 
-        type: 'visit',
-        status: { $nin: ['cancelled', 'rejected'] }
+      const baseVisitFilter = {
+        ...countFilter,
+        type: "visit",
+        // status: { $nin: ["cancelled", "rejected"] },
       };
 
       // Get department filter from query params (optional)
@@ -140,21 +151,38 @@ const getGodowns = async (req, res) => {
         { $match: baseOrderFilter },
         {
           $lookup: {
-            from: 'users',
-            localField: 'createdBy',
-            foreignField: '_id',
-            as: 'createdByUser'
-          }
+            from: "users",
+            localField: "createdBy",
+            foreignField: "_id",
+            as: "createdByUser",
+          },
         },
-        { $unwind: { path: '$createdByUser', preserveNullAndEmptyArrays: true } }
+        {
+          $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true },
+        },
+        {
+          $lookup: {
+            from: "roles",
+            localField: "createdByUser.role", // role ObjectId from User
+            foreignField: "_id",
+            as: "userRole",
+          },
+        },
+        {
+          $unwind: { path: "$userRole", preserveNullAndEmptyArrays: true },
+        },
       ];
-
+      if (req.query.onlySalesExecutive === "true") {
+        orderPipeline.push({ $match: { "userRole.name": "Sales Executive" } });
+      }
       // Add department filter only if specified
       if (department) {
-        orderPipeline.push({ $match: { 'createdByUser.department': department } });
+        orderPipeline.push({
+          $match: { "createdByUser.department": department },
+        });
       }
 
-      orderPipeline.push({ $group: { _id: '$godown', count: { $sum: 1 } } });
+      orderPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
 
       // Aggregate order counts with filters
       const orderCounts = await Order.aggregate(orderPipeline); // [memory:1][memory:2]
@@ -169,21 +197,25 @@ const getGodowns = async (req, res) => {
         { $match: baseVisitFilter },
         {
           $lookup: {
-            from: 'users',
-            localField: 'createdBy',
-            foreignField: '_id',
-            as: 'createdByUser'
-          }
+            from: "users",
+            localField: "createdBy",
+            foreignField: "_id",
+            as: "createdByUser",
+          },
         },
-        { $unwind: { path: '$createdByUser', preserveNullAndEmptyArrays: true } }
+        {
+          $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true },
+        },
       ];
 
       // Add department filter only if specified
       if (department) {
-        visitPipeline.push({ $match: { 'createdByUser.department': department } });
+        visitPipeline.push({
+          $match: { "createdByUser.department": department },
+        });
       }
 
-      visitPipeline.push({ $group: { _id: '$godown', count: { $sum: 1 } } });
+      visitPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
 
       // Aggregate visit counts with filters
       const visitCounts = await Order.aggregate(visitPipeline); // [memory:1][memory:2]
@@ -196,7 +228,7 @@ const getGodowns = async (req, res) => {
       // Aggregate inventory counts
       const inventoryCounts = await Inventory.aggregate([
         { $match: { godown: { $in: godownIds } } },
-        { $group: { _id: '$godown', count: { $sum: 1 } } }
+        { $group: { _id: "$godown", count: { $sum: 1 } } },
       ]);
 
       inventoryCountsMap = inventoryCounts.reduce((acc, c) => {
@@ -205,19 +237,20 @@ const getGodowns = async (req, res) => {
       }, {});
     }
 
-    const godownsWithCounts = godowns.map(g => ({
+    const godownsWithCounts = godowns.map((g) => ({
       ...g,
       orderCount: orderCountsMap[g._id.toString()] || 0,
       visitCount: visitCountsMap[g._id.toString()] || 0,
-      inventoryCount: inventoryCountsMap[g._id.toString()] || 0
+      inventoryCount: inventoryCountsMap[g._id.toString()] || 0,
     })); // [memory:1]
 
-    res.status(200).json({ success: true, data: { godowns: godownsWithCounts } }); // [memory:1]
+    res
+      .status(200)
+      .json({ success: true, data: { godowns: godownsWithCounts } }); // [memory:1]
   } catch (error) {
     res.status(500).json({ success: false, message: error.message }); // [memory:10]
   }
 };
-
 
 const getGodownById = async (req, res) => {
   try {
@@ -230,7 +263,11 @@ const getGodownById = async (req, res) => {
 
 const updateGodown = async (req, res) => {
   try {
-    const result = await godownService.updateGodown(req.params.id, req.body, req.user._id);
+    const result = await godownService.updateGodown(
+      req.params.id,
+      req.body,
+      req.user._id
+    );
     res.status(200).json(result);
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -239,7 +276,10 @@ const updateGodown = async (req, res) => {
 
 const deleteGodown = async (req, res) => {
   try {
-    const result = await godownService.deleteGodown(req.params.id, req.user._id);
+    const result = await godownService.deleteGodown(
+      req.params.id,
+      req.user._id
+    );
     res.status(200).json(result);
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -251,7 +291,5 @@ module.exports = {
   getGodowns,
   getGodownById,
   updateGodown,
-  deleteGodown
+  deleteGodown,
 };
-
-
