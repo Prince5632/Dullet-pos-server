@@ -52,6 +52,18 @@ const router = express.Router();
  *         schema:
  *           type: string
  *         description: Filter by city (partial match)
+ *       - in: query
+ *         name: dateFrom
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter customers created on or after this date (YYYY-MM-DD)
+ *       - in: query
+ *         name: dateTo
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter customers created on or before this date (YYYY-MM-DD)
  *     responses:
  *       200:
  *         description: Customers retrieved successfully

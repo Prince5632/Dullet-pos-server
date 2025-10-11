@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
-
+const { Order } = require("./order.schema");
+const orderSchema = require("./order.schema");
   const transactionSchema = new Schema(
     {
     transactionId: {
@@ -42,6 +43,11 @@ const { Schema } = mongoose;
       type: mongoose.Schema.Types.ObjectId,
       ref: "Customer",
       required: false, // optional; helps when transactionForModel = "Order"
+    },
+    createdFromService: {
+      type: String,
+      enum: ["order", "transaction"],
+      required: true,
     },
 
     createdBy: {
@@ -105,6 +111,21 @@ transactionSchema.pre("save", async function (next) {
       console.error("Error generating transaction ID:", error);
       const timestamp = Date.now().toString().slice(-6);
       this.transactionId = `TRANS${timestamp}`;
+    }
+  }
+  if(this.customer && this.transactionForModel === "Order"){
+    const outstandingOrders = await orderSchema.find({
+      customer: this.customer,
+      type: 'order', // Only consider orders, not visits
+      paymentStatus: { $in: ['pending', 'partial', 'overdue'] }
+    }).select('totalAmount paidAmount').lean();
+
+    const calculatedOutstanding = outstandingOrders.reduce((total, order) => {
+      return total + (order.totalAmount - (order.paidAmount || 0));
+    }, 0);
+    this.extraInfo = {
+      ...this.extraInfo,
+      netBalanceRemaining: this.createdFromService === "transaction" ? Math.max(0, calculatedOutstanding - this.amountPaid) : Math.max(0, calculatedOutstanding)
     }
   }
   next();

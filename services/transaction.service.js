@@ -115,9 +115,10 @@ class TransactionService {
         transactionFor,
         customer,
         amountPaid,
-        transactionDate
+        transactionDate,
+        createdFromService,
       } = transactionData;
-
+      console.log()
       // Normalize transactionFor to an array
       const transactionForArray = Array.isArray(transactionFor)
         ? transactionFor
@@ -153,6 +154,7 @@ class TransactionService {
         customer,
         amountPaid,
         createdBy: userId,
+        createdFromService,
         transactionDate: transactionDate || new Date()
       });
 
@@ -265,6 +267,7 @@ class TransactionService {
             customer: customerId,
             amountPaid,
             createdBy: userId,
+            createdFromService: "transaction",
             transactionDate: transactionDate || new Date(),
           });
           await newTransaction.save({ session });

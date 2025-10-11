@@ -334,7 +334,7 @@ async getOrderById(orderId) {
     await order.save();
 
     // Record transaction if there's an initial payment
-    if (order.paidAmount && order.paidAmount > 0) {
+    if (order.totalAmount) {
       try {
         await transactionService.createTransaction({
           transactionMode: order.paymentTerms || 'Cash',
@@ -342,6 +342,7 @@ async getOrderById(orderId) {
           transactionFor: [order._id],
           customer: order.customer,
           amountPaid: order.paidAmount,
+          createdFromService: "order",
           transactionDate: new Date()
         }, createdBy);
         
@@ -418,6 +419,7 @@ async getOrderById(orderId) {
           transactionFor: [order._id],
           customer: order.customer,
           amountPaid: amountDifference,
+          createdFromService: "order",
           transactionDate: new Date()
         }, updatedBy);
         
@@ -1034,6 +1036,7 @@ async getOrderById(orderId) {
           transactionFor: [order._id],
           customer: order.customer,
           amountPaid: amountCollected,
+          createdFromService: "order",
           transactionDate: new Date()
         }, user._id);
         
