@@ -80,6 +80,24 @@ class TransactionController {
       res.status(500).json(createResponse(false, 'Internal server error', null, 500));
     }
   }
+
+  /**
+   * Allocate customer payment across orders
+   */
+  async allocateCustomerPayment(req, res) {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json(createResponse(false, 'User authentication required', null, 401));
+      }
+      const { customerId, amountPaid, paymentMode, transactionDate } = req.body || {};
+      const result = await transactionService.allocateCustomerPayment({ customerId, amountPaid, paymentMode, transactionDate }, userId);
+      return res.status(result.statusCode || (result.success ? 200 : 400)).json(result);
+    } catch (error) {
+      console.error('Error in allocateCustomerPayment controller:', error);
+      res.status(500).json(createResponse(false, 'Internal server error', null, 500));
+    }
+  }
 }
 
 module.exports = new TransactionController();

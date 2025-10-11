@@ -1,5 +1,7 @@
 const Transaction = require('../models/transaction.schema');
 const { createResponse } = require('../utils/response');
+const { Order } = require('../models');
+const mongoose = require('mongoose');
 
 class TransactionService {
   /**
@@ -173,6 +175,124 @@ class TransactionService {
         return createResponse(false, 'Transaction ID already exists. Please try again.', null, 400);
       }
       
+      throw error;
+    }
+  }
+
+  /**
+   * Allocate a customer payment across unpaid/partial orders (oldest first)
+   * - Fully pays oldest orders first, then partially pays next if amount remains
+   * - Updates paymentStatus/paidAmount and overrides paymentTerms with selected mode
+   * - Creates a single transaction referencing affected order IDs
+   */
+  async allocateCustomerPayment({ customerId, amountPaid, paymentMode, transactionDate }, userId) {
+    try {
+      // Basic validation
+      if (!customerId) {
+        return createResponse(false, 'customerId is required', null, 400);
+      }
+      if (!amountPaid || amountPaid <= 0) {
+        return createResponse(false, 'amountPaid must be greater than 0', null, 400);
+      }
+      const validModes = ['Cash', 'Credit', 'Cheque', 'Online'];
+      if (!paymentMode || !validModes.includes(paymentMode)) {
+        return createResponse(false, 'Invalid payment mode', null, 400);
+      }
+
+      const session = await mongoose.startSession();
+      let affectedOrderIds = [];
+      let remainingAmount = amountPaid;
+
+      await session.withTransaction(async () => {
+        // Find unpaid/partial/overdue orders for this customer, oldest first
+        const orders = await Order.find({
+          customer: customerId,
+          type: 'order',
+          paymentStatus: { $in: ['pending', 'partial', 'overdue'] },
+        })
+          .sort({ orderDate: 1 })
+          .select('_id totalAmount paidAmount paymentStatus paymentTerms')
+          .session(session);
+
+        for (const ord of orders) {
+          if (remainingAmount <= 0) break;
+          const alreadyPaid = ord.paidAmount || 0;
+          const remainingForOrder = Math.max(0, (ord.totalAmount || 0) - alreadyPaid);
+          if (remainingForOrder <= 0) continue;
+
+          if (remainingAmount >= remainingForOrder) {
+            // Fully pay this order
+            const nextPaidAmount = alreadyPaid + remainingForOrder;
+            await Order.updateOne(
+              { _id: ord._id },
+              {
+                $set: {
+                  paidAmount: nextPaidAmount,
+                  paymentStatus: 'paid',
+                  paymentTerms: paymentMode
+                }
+              },
+              { session }
+            );
+            affectedOrderIds.push(ord._id);
+            remainingAmount -= remainingForOrder;
+          } else if (remainingAmount > 0) {
+            // Partially pay this order and stop
+            const nextPaidAmount = alreadyPaid + remainingAmount;
+            await Order.updateOne(
+              { _id: ord._id },
+              {
+                $set: {
+                  paidAmount: nextPaidAmount,
+                  paymentStatus: 'partial',
+                  paymentTerms: paymentMode
+                }
+              },
+              { session }
+            );
+            affectedOrderIds.push(ord._id);
+            remainingAmount = 0;
+            break;
+          }
+        }
+
+        // Create transaction only if any orders affected
+        if (affectedOrderIds.length > 0) {
+          const newTransaction = new Transaction({
+            transactionMode: paymentMode,
+            transactionForModel: 'Order',
+            transactionFor: affectedOrderIds,
+            customer: customerId,
+            amountPaid,
+            createdBy: userId,
+            transactionDate: transactionDate || new Date(),
+          });
+          await newTransaction.save({ session });
+        }
+      });
+      session.endSession();
+
+      // Populate transaction for response (last transaction created for this customer)
+      let populatedTransaction = null;
+      if (affectedOrderIds.length > 0) {
+        populatedTransaction = await Transaction.findOne({
+          customer: customerId,
+        })
+          .sort({ createdAt: -1 })
+          .populate('customer', 'businessName customerId phone')
+          .populate('createdBy', 'firstName lastName employeeId')
+          .populate('transactionFor')
+          .lean();
+      }
+
+      return createResponse(true, 'Payment allocated successfully', {
+        transaction: populatedTransaction,
+        affectedOrderIds,
+        affectedOrdersCount: affectedOrderIds.length,
+        unallocatedAmount: Math.max(0, remainingAmount),
+      }, affectedOrderIds.length > 0 ? 201 : 200);
+    } catch (error) {
+      console.error('Error in allocateCustomerPayment:', error);
       throw error;
     }
   }

@@ -282,4 +282,46 @@ router.get('/:id', authenticate, transactionController.getTransactionById);
  */
 router.post('/', authenticate, transactionController.createTransaction);
 
+/**
+ * @swagger
+ * /api/transactions/allocate/customer:
+ *   post:
+ *     summary: Allocate a customer payment across unpaid/partial orders
+ *     description: Applies payment to oldest unpaid orders first; updates orders and creates a transaction referencing affected orders.
+ *     tags: [Transaction Management]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [customerId, amountPaid, paymentMode]
+ *             properties:
+ *               customerId:
+ *                 type: string
+ *               amountPaid:
+ *                 type: number
+ *                 minimum: 0.01
+ *               paymentMode:
+ *                 type: string
+ *                 enum: [Cash, Credit, Cheque, Online]
+ *               transactionDate:
+ *                 type: string
+ *                 format: date-time
+ *     responses:
+ *       201:
+ *         description: Payment allocated and transaction created
+ *       200:
+ *         description: No orders affected but request processed
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Authentication required
+ *       500:
+ *         description: Internal server error
+ */
+router.post('/allocate/customer', authenticate, transactionController.allocateCustomerPayment);
+
 module.exports = router;
