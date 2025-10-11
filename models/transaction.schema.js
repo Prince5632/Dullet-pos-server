@@ -1,8 +1,8 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
-const transactionSchema = new Schema(
-  {
+  const transactionSchema = new Schema(
+    {
     transactionId: {
       type: String,
       required: false, // Auto-generated in pre-save middleware
@@ -54,6 +54,14 @@ const transactionSchema = new Schema(
       type: Number,
       required: true,
       min: 0,
+    },
+
+    // Optional extra information container for backward-compatible enhancements
+    // This can hold computed values and snapshots without breaking existing clients
+    extraInfo: {
+      type: Schema.Types.Mixed,
+      required: false,
+      default: undefined,
     },
   },
   { timestamps: true }

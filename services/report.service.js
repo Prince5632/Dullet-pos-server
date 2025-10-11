@@ -10,56 +10,28 @@ exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue',
   try {
     const { dateRange, userId, department, godownId, type } = filters;
 
-    // Build match criteria - support both orders and visits
-    const matchCriteria = { 
-      type: type || 'order', 
-      status: { $nin: ['cancelled', 'rejected'] } 
-    };
-    
-    if (dateRange && (dateRange.startDate || dateRange.endDate)) {
-      matchCriteria.orderDate = {};
-      if (dateRange.startDate) {
-        matchCriteria.orderDate.$gte = new Date(dateRange.startDate);
-      }
-      if (dateRange.endDate) {
-        const endDate = new Date(dateRange.endDate);
-        endDate.setHours(23, 59, 59, 999);
-        matchCriteria.orderDate.$lte = endDate;
-      }
-    }
+    // Match base user filters
+    const userMatch = {};
+    if (userId) userMatch._id = new mongoose.Types.ObjectId(userId);
+    if (department) userMatch.department = department;
 
-    if (userId) {
-      matchCriteria.createdBy = new mongoose.Types.ObjectId(userId);
-    }
-
-    // Apply user-specific godown filtering
-    let godownFilter = {};
-    if (requestingUser && (requestingUser.primaryGodown || (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0))) {
-      const allowedGodowns = [];
-      
-      if (requestingUser.primaryGodown) {
-        allowedGodowns.push(requestingUser.primaryGodown._id || requestingUser.primaryGodown);
-      }
-      
-      if (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0) {
-        allowedGodowns.push(...requestingUser.accessibleGodowns.map(g => g._id || g));
-      }
-      
+    // Handle godown access logic
+    let godownAccessFilter = {};
+    if (requestingUser && (requestingUser.primaryGodown || (requestingUser.accessibleGodowns?.length > 0))) {
+      const allowedGodowns = [
+        ...(requestingUser.primaryGodown ? [requestingUser.primaryGodown._id || requestingUser.primaryGodown] : []),
+        ...(requestingUser.accessibleGodowns?.map(g => g._id || g) || [])
+      ];
       if (allowedGodowns.length > 0) {
-        godownFilter.godown = { $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) };
+        godownAccessFilter.godown = { $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) };
       }
     }
 
-    // If specific godownId is provided, ensure it's within user's accessible godowns
     if (godownId) {
       const specificGodown = new mongoose.Types.ObjectId(godownId);
-      if (godownFilter.godown) {
-        // Check if the specific godown is in the allowed list
-        const isAllowed = godownFilter.godown.$in.some(id => id.equals(specificGodown));
-        if (isAllowed) {
-          godownFilter.godown = specificGodown;
-        } else {
-          // User doesn't have access to this godown, return empty results
+      if (godownAccessFilter.godown) {
+        const isAllowed = godownAccessFilter.godown.$in.some(id => id.equals(specificGodown));
+        if (!isAllowed) {
           return {
             summary: {
               totalSalesExecutives: 0,
@@ -72,95 +44,127 @@ exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue',
             dateRange: dateRange || null
           };
         }
-      } else {
-        godownFilter.godown = specificGodown;
       }
+      godownAccessFilter.godown = specificGodown;
     }
 
-    // Aggregate orders by sales executive
-    const reports = await Order.aggregate([
-      { $match: matchCriteria },
-      // Apply godown filter
-      ...(Object.keys(godownFilter).length > 0 ? [{ $match: godownFilter }] : []),
+    const reports = await User.aggregate([
+      { $match: userMatch },
+
+      // ✅ Include role info
       {
-        $group: {
-          _id: '$createdBy',
-          totalOrders: { $sum: 1 },
-          totalRevenue: { $sum: '$totalAmount' },
-          totalPaidAmount: { $sum: '$paidAmount' },
-          avgOrderValue: { $avg: '$totalAmount' },
+        $lookup: {
+          from: "roles",
+          localField: "role",
+          foreignField: "_id",
+          as: "roleData"
+        }
+      },
+      {
+        $unwind: {
+          path: "$roleData",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $match: {
+          "roleData.name": "Sales Executive"
+        }
+      },
+
+      // ✅ Lookup their orders (even if none)
+      {
+        $lookup: {
+          from: 'orders',
+          let: { userId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$createdBy', '$$userId'] },
+                type: type || 'order',
+                status: { $nin: ['cancelled', 'rejected'] },
+                ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {})
+              }
+            },
+            ...(dateRange && (dateRange.startDate || dateRange.endDate)
+              ? [{
+                  $match: {
+                    orderDate: {
+                      ...(dateRange.startDate ? { $gte: new Date(dateRange.startDate) } : {}),
+                      ...(dateRange.endDate ? { $lte: new Date(dateRange.endDate + 'T23:59:59.999Z') } : {})
+                    }
+                  }
+                }]
+              : []),
+          ],
+          as: 'orders'
+        }
+      },
+
+      // ✅ Compute all required stats
+      {
+        $addFields: {
+          totalOrders: { $size: { $ifNull: ['$orders', []] } },
+          totalRevenue: { $sum: '$orders.totalAmount' },
+          totalPaidAmount: { $sum: '$orders.paidAmount' },
+          totalOutstanding: {
+            $subtract: [
+              { $ifNull: [{ $sum: '$orders.totalAmount' }, 0] },
+              { $ifNull: [{ $sum: '$orders.paidAmount' }, 0] }
+            ]
+          },
+          avgOrderValue: {
+            $cond: [
+              { $gt: [{ $size: '$orders' }, 0] },
+              { $avg: '$orders.totalAmount' },
+              0
+            ]
+          },
           pendingOrders: {
-            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
+            $size: {
+              $filter: { input: '$orders', as: 'o', cond: { $eq: ['$$o.status', 'pending'] } }
+            }
           },
           approvedOrders: {
-            $sum: { $cond: [{ $eq: ['$status', 'approved'] }, 1, 0] }
+            $size: {
+              $filter: { input: '$orders', as: 'o', cond: { $eq: ['$$o.status', 'approved'] } }
+            }
           },
           deliveredOrders: {
-            $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] }
+            $size: {
+              $filter: { input: '$orders', as: 'o', cond: { $eq: ['$$o.status', 'delivered'] } }
+            }
           },
           completedOrders: {
-            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+            $size: {
+              $filter: { input: '$orders', as: 'o', cond: { $eq: ['$$o.status', 'completed'] } }
+            }
           },
-          uniqueCustomers: { $addToSet: '$customer' }
-        }
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'executiveInfo'
-        }
-      },
-      {
-        $unwind: '$executiveInfo'
-      },
-      // Filter by department if provided (default handled in controller)
-      ...(department ? [{ $match: { 'executiveInfo.department': department } }] : []),
-      {
-        $lookup: {
-          from: 'roles',
-          localField: 'executiveInfo.role',
-          foreignField: '_id',
-          as: 'roleInfo'
-        }
-      },
-      {
-        $unwind: { path: '$roleInfo', preserveNullAndEmptyArrays: true }
-      },
-      {
-        $project: {
-          _id: 1,
-          executiveName: {
-            $concat: ['$executiveInfo.firstName', ' ', '$executiveInfo.lastName']
+          uniqueCustomersCount: {
+            $size: {
+              $setUnion: {
+                $map: { input: '$orders', as: 'order', in: '$$order.customer' }
+              }
+            }
           },
-          employeeId: '$executiveInfo.employeeId',
-          email: '$executiveInfo.email',
-          phone: '$executiveInfo.phone',
-          department: '$executiveInfo.department',
-          position: '$executiveInfo.position',
-          roleName: '$roleInfo.name',
-          totalOrders: 1,
-          totalRevenue: { $round: ['$totalRevenue', 2] },
-          totalPaidAmount: { $round: ['$totalPaidAmount', 2] },
-          totalOutstanding: {
-            $round: [{ $subtract: ['$totalRevenue', '$totalPaidAmount'] }, 2]
-          },
-          avgOrderValue: { $round: ['$avgOrderValue', 2] },
-          pendingOrders: 1,
-          approvedOrders: 1,
-          deliveredOrders: 1,
-          completedOrders: 1,
-          uniqueCustomersCount: { $size: '$uniqueCustomers' },
           conversionRate: {
             $round: [
               {
                 $multiply: [
                   {
                     $cond: [
-                      { $eq: ['$totalOrders', 0] },
+                      { $eq: [{ $size: '$orders' }, 0] },
                       0,
-                      { $divide: ['$completedOrders', '$totalOrders'] }
+                      {
+                        $divide: [
+                          {
+                            $size: {
+                              $filter: { input: '$orders', as: 'o', cond: { $eq: ['$$o.status', 'completed'] } }
+                            }
+                          },
+                          { $size: '$orders' }
+                        ]
+                      }
                     ]
                   },
                   100
@@ -171,31 +175,49 @@ exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue',
           }
         }
       },
+
       {
-        $sort: { [sortBy]: sortOrder === 'desc' ? -1 : 1 }
-      }
+        $project: {
+          _id: 1,
+          executiveName: { $concat: ['$firstName', ' ', '$lastName'] },
+          employeeId: 1,
+          email: 1,
+          phone: 1,
+          department: 1,
+          position: 1,
+          totalOrders: 1,
+          totalRevenue: { $round: ['$totalRevenue', 2] },
+          totalPaidAmount: { $round: ['$totalPaidAmount', 2] },
+          totalOutstanding: { $round: ['$totalOutstanding', 2] },
+          avgOrderValue: { $round: ['$avgOrderValue', 2] },
+          pendingOrders: 1,
+          approvedOrders: 1,
+          deliveredOrders: 1,
+          completedOrders: 1,
+          uniqueCustomersCount: 1,
+          conversionRate: 1
+        }
+      },
+
+      { $sort: { [sortBy]: sortOrder === 'desc' ? -1 : 1 } }
     ]);
 
-    // Calculate summary statistics
     const summary = {
       totalExecutives: reports.length,
-      totalOrdersAll: reports.reduce((sum, r) => sum + r.totalOrders, 0),
-      totalRevenueAll: reports.reduce((sum, r) => sum + r.totalRevenue, 0),
-      totalOutstandingAll: reports.reduce((sum, r) => sum + r.totalOutstanding, 0),
-      avgOrderValueAll: reports.length > 0 
-        ? reports.reduce((sum, r) => sum + r.avgOrderValue, 0) / reports.length 
+      totalOrdersAll: reports.reduce((sum, r) => sum + (r.totalOrders || 0), 0),
+      totalRevenueAll: reports.reduce((sum, r) => sum + (r.totalRevenue || 0), 0),
+      totalOutstandingAll: reports.reduce((sum, r) => sum + (r.totalOutstanding || 0), 0),
+      avgOrderValueAll: reports.length > 0
+        ? reports.reduce((sum, r) => sum + (r.avgOrderValue || 0), 0) / reports.length
         : 0
     };
 
-    return {
-      summary,
-      reports,
-      dateRange: dateRange || null
-    };
+    return { summary, reports, dateRange: dateRange || null };
   } catch (error) {
     throw new Error(`Failed to generate sales executive reports: ${error.message}`);
   }
 };
+
 
 /**
  * Get Godown-wise Sales Reports
