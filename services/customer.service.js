@@ -1,5 +1,8 @@
 const { Customer } = require("../models");
 const { AuditLog } = require("../models");
+const { Order } = require("../models");
+const { Transaction } = require("../models");
+const orderSchema = require("../models/order.schema");
 
 class CustomerService {
   // Get all customers with pagination and filtering
@@ -175,12 +178,22 @@ class CustomerService {
       Customer.countDocuments(filter),
     ]);
 
+    // Calculate balances for all customers in the current page
+    const customerIds = customers.map(customer => customer._id);
+    const balances = await this.calculateMultipleCustomerBalances(customerIds);
+
+    // Add balance to each customer object
+    const customersWithBalance = customers.map(customer => ({
+      ...customer,
+      netBalance: balances[customer._id.toString()] || 0
+    }));
+
     const totalPages = Math.ceil(totalCustomers / parseInt(limit));
 
     return {
       success: true,
       data: {
-        customers,
+        customers: customersWithBalance,
       },
       pagination: {
         currentPage: parseInt(page),
@@ -204,20 +217,9 @@ class CustomerService {
       throw new Error("Customer not found");
     }
 
-    // Calculate outstanding amount from unpaid orders
-    const Order = require('../models/order.schema');
-    const outstandingOrders = await Order.find({
-      customer: customerId,
-      type: 'order', // Only consider orders, not visits
-      paymentStatus: { $in: ['pending', 'partial', 'overdue'] }
-    }).select('totalAmount paidAmount').lean();
-
-    const calculatedOutstanding = outstandingOrders.reduce((total, order) => {
-      return total + (order.totalAmount - (order.paidAmount || 0));
-    }, 0);
-
-    // Update the customer object with calculated outstanding amount
-    customer.outstandingAmount = Math.max(0, calculatedOutstanding);
+    // Calculate net balance for the customer
+    const netBalance = await this.calculateCustomerBalance(customerId);
+    customer.netBalance = netBalance;
 
     return {
       success: true,
@@ -375,6 +377,103 @@ class CustomerService {
       message: "Customer reactivated successfully",
     };
   }
+
+  // Calculate net balance for a customer
+  async calculateCustomerBalance(customerId) {
+    try {
+      // Get customer's outstanding amount
+      const customer = await Customer.findById(customerId).lean();
+      if (!customer) {
+        return 0;
+      }
+
+      // Get unpaid order amounts (totalAmount - paidAmount for orders with payment status not 'paid')
+      const unpaidOrders = await Order.aggregate([
+        {
+          $match: {
+            customer: customerId,
+            type: 'order',
+            paymentStatus: { $ne: 'paid' }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalUnpaid: {
+              $sum: { $subtract: ['$totalAmount', '$paidAmount'] }
+            }
+          }
+        }
+      ]);
+
+      const unpaidAmount = unpaidOrders.length > 0 ? unpaidOrders[0].totalUnpaid : 0;
+
+      // Get advance payments (transactions where customer has paid more than order amounts)
+      const advancePayments = await Transaction.aggregate([
+        {
+          $match: {
+            customer: customerId,
+            transactionForModel: 'Customer'
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalAdvance: { $sum: '$amountPaid' }
+          }
+        }
+      ]);
+
+      const advanceAmount = advancePayments.length > 0 ? advancePayments[0].totalAdvance : 0;
+
+      // Net balance = outstanding amount + unpaid orders - advance payments
+      const netBalance = (customer.outstandingAmount || 0) + unpaidAmount - advanceAmount;
+
+      return Math.round(netBalance * 100) / 100; // Round to 2 decimal places
+    } catch (error) {
+      console.error('Error calculating customer balance:', error);
+      return 0;
+    }
+  }
+
+ // Calculate balances for multiple customers efficiently
+async calculateMultipleCustomerBalances(customerIds) {
+  try {
+    if (!Array.isArray(customerIds) || customerIds.length === 0) {
+      return {};
+    }
+
+    // Fetch all relevant orders for these customers in one query
+    const outstandingOrders = await orderSchema.find({
+      customer: { $in: customerIds },
+      type: 'order', // Only consider actual orders
+      paymentStatus: { $in: ['pending', 'partial', 'overdue'] }
+    })
+      .select('customer totalAmount paidAmount')
+      .lean();
+    
+    // Group and sum outstanding amounts per customer
+    const balances = outstandingOrders.reduce((acc, order) => {
+      const customerId = order.customer.toString();
+      const outstanding = (order.totalAmount || 0) - (order.paidAmount || 0);
+      acc[customerId] = (acc[customerId] || 0) + outstanding;
+      return acc;
+    }, {});
+
+    // Ensure every provided customerId appears, even if 0 outstanding
+    for (const id of customerIds) {
+      if (!(id.toString() in balances)) {
+        balances[id.toString()] = 0;
+      }
+    }
+
+    return balances;
+  } catch (error) {
+    console.error('Error calculating multiple customer balances:', error);
+    return {};
+  }
+}
+
 
   // Get customer statistics
   async getCustomerStats() {
