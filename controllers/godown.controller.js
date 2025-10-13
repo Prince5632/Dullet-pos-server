@@ -225,11 +225,87 @@ const getGodowns = async (req, res) => {
         return acc;
       }, {}); // [memory:1]
 
-      // Aggregate inventory counts
-      const inventoryCounts = await Inventory.aggregate([
-        { $match: { godown: { $in: godownIds } } },
-        { $group: { _id: "$godown", count: { $sum: 1 } } },
-      ]);
+      // Build inventory filter for counting based on query parameters
+      const inventoryCountFilter = { godown: { $in: godownIds } };
+
+      // Apply inventory type filter
+      if (req.query.inventoryType) {
+        inventoryCountFilter.inventoryType = req.query.inventoryType;
+      }
+
+      // Apply date range filter for inventory
+      if (req.query.dateFrom || req.query.dateTo) {
+        inventoryCountFilter.dateOfStock = {};
+        if (req.query.dateFrom) {
+          inventoryCountFilter.dateOfStock.$gte = new Date(req.query.dateFrom);
+        }
+        if (req.query.dateTo) {
+          // Set end date to end of day (23:59:59.999) to include all inventory on that date
+          const endDate = new Date(req.query.dateTo);
+          endDate.setHours(23, 59, 59, 999);
+          inventoryCountFilter.dateOfStock.$lte = endDate;
+        }
+      }
+
+      // Apply search filter for inventory
+      if (req.query.search) {
+        const searchConditions = [
+          { stockId: { $regex: req.query.search, $options: "i" } },
+          { inventoryType: { $regex: req.query.search, $options: "i" } },
+          { unit: { $regex: req.query.search, $options: "i" } },
+          { additionalNotes: { $regex: req.query.search, $options: "i" } }
+        ];
+
+        // If search is a valid number, also search in quantity field
+        const numericSearch = parseFloat(req.query.search);
+        if (!isNaN(numericSearch)) {
+          searchConditions.push({ quantity: numericSearch });
+        }
+
+        inventoryCountFilter.$or = searchConditions;
+      }
+
+      // Build aggregation pipeline for inventory counts
+      const inventoryPipeline = [
+        { $match: inventoryCountFilter },
+        {
+          $lookup: {
+            from: "users",
+            localField: "loggedBy",
+            foreignField: "_id",
+            as: "loggedByUser",
+          },
+        },
+        {
+          $unwind: { path: "$loggedByUser", preserveNullAndEmptyArrays: true },
+        },
+      ];
+
+      // Apply logged by filter (search by user name)
+      if (req.query.loggedBy) {
+        inventoryPipeline.push({
+          $match: {
+            $or: [
+              { "loggedByUser.firstName": { $regex: req.query.loggedBy, $options: "i" } },
+              { "loggedByUser.lastName": { $regex: req.query.loggedBy, $options: "i" } },
+              { 
+                $expr: {
+                  $regexMatch: {
+                    input: { $concat: ["$loggedByUser.firstName", " ", "$loggedByUser.lastName"] },
+                    regex: req.query.loggedBy,
+                    options: "i"
+                  }
+                }
+              }
+            ]
+          }
+        });
+      }
+
+      inventoryPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
+
+      // Aggregate inventory counts with filters
+      const inventoryCounts = await Inventory.aggregate(inventoryPipeline);
 
       inventoryCountsMap = inventoryCounts.reduce((acc, c) => {
         acc[c._id.toString()] = c.count;
