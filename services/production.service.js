@@ -135,29 +135,29 @@ class ProductionService {
   async createProduction(productionData, createdById) {
     try {
       // Validate operator is provided
-      if (!productionData.operator || !productionData.operator.trim()) {
-        throw new Error("Operator name is required");
-      }
+      // if (!productionData.operator || !productionData.operator.trim()) {
+      //   throw new Error("Operator name is required");
+      // }
 
       // Validate output details
-      if (
-        !productionData.outputDetails ||
-        productionData.outputDetails.length === 0
-      ) {
-        throw new Error("At least one output detail is required");
-      }
+      // if (
+      //   !productionData.outputDetails ||
+      //   productionData.outputDetails.length === 0
+      // ) {
+      //   throw new Error("At least one output detail is required");
+      // }
 
       // Validate each output detail
-      for (const output of productionData.outputDetails) {
-        if (!output.itemName || !output.productQty || !output.productUnit) {
-          throw new Error(
-            "Each output detail must have itemName, productQty, and productUnit"
-          );
-        }
-        if (output.productQty <= 0) {
-          throw new Error("Product quantity must be greater than 0");
-        }
-      }
+      // for (const output of productionData.outputDetails) {
+      //   if (!output.itemName || !output.productQty || !output.productUnit) {
+      //     throw new Error(
+      //       "Each output detail must have itemName, productQty, and productUnit"
+      //     );
+      //   }
+      //   if (output.productQty <= 0) {
+      //     throw new Error("Product quantity must be greater than 0");
+      //   }
+      // }
 
       // Validate input quantity
       if (productionData.inputQty <= 0) {
@@ -228,12 +228,12 @@ class ProductionService {
       }
 
       // Validate operator if provided
-      if (!updateData.operator) {
-          throw new Error("Operator not found");
-      }
+      // if (!updateData.operator) {
+      //     throw new Error("Operator not found");
+      // }
 
       // Validate output details if provided
-      if (updateData.outputDetails) {
+      if (updateData.status === "Finished" && updateData.outputDetails) {
         if (updateData.outputDetails.length === 0) {
           throw new Error("At least one output detail is required");
         }
