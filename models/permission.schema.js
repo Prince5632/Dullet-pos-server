@@ -87,6 +87,7 @@ permissionSchema.statics.seedDefaultPermissions = async function() {
     { name: 'production.create', module: 'production', action: 'create', description: 'Create production batches' },
     { name: 'production.read', module: 'production', action: 'read', description: 'View production data' },
     { name: 'production.update', module: 'production', action: 'update', description: 'Update production status' },
+    { name: 'production.delete', module: 'production', action: 'delete', description: 'Delete production batches' },
     
     // Godown Management
     { name: 'godowns.create', module: 'godowns', action: 'create', description: 'Create new godowns' },

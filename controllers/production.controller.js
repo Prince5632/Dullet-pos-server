@@ -194,6 +194,22 @@ const getProductionSummary = async (req, res) => {
   }
 };
 
+// Get production audit trail controller
+const getProductionAuditTrail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const result = await productionService.getProductionAuditTrail(id, parseInt(page), parseInt(limit));
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error getting production audit trail:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to get production audit trail',
+    });
+  }
+};
+
 module.exports = {
   getAllProduction,
   getProductionById,
@@ -201,5 +217,6 @@ module.exports = {
   updateProduction,
   deleteProduction,
   getProductionStats,
-  getProductionSummary
+  getProductionSummary,
+  getProductionAuditTrail
 };

@@ -62,7 +62,7 @@ const productionSchema = new mongoose.Schema({
     productUnit: {
       type: String,
       required: true,
-      enum: ['KG', 'Quintal', 'Ton', 'Bags', '5Kg Bags',"40Kg Bags"],
+      enum: ['KG', 'Quintal', 'Ton'],
       default: 'KG'
     },
     notes: {

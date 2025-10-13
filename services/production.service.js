@@ -10,6 +10,7 @@ class ProductionService {
       search = "",
       shift = "",
       location = "",
+      machine = "",
       operator = "",
       dateFrom = "",
       dateTo = "",
@@ -40,9 +41,11 @@ class ProductionService {
     }
 
     if (operator) {
-      filter.operator = operator;
+      filter.operator ={ $regex: operator, $options: "i" };
     }
-
+    if (machine) {
+      filter.machine ={ $regex: machine, $options: "i" };
+    }
     if (dateFrom || dateTo) {
       countFilter.orderDate = {};
 
@@ -84,7 +87,7 @@ class ProductionService {
 
       // Get production records with population
       const productions = await Production.find(filter)
-        .populate("createdBy", "name email")
+        .populate("createdBy", "firstName lastName email")
         .sort(sortOptions)
         .skip(skip)
         .limit(limitNum)
@@ -109,7 +112,7 @@ class ProductionService {
   async getProductionById(id) {
     try {
       const production = await Production.findById(id)
-        .populate("createdBy", "name email")
+        .populate("createdBy", "firstName lastName email")
         .lean();
 
       if (!production) {
@@ -190,7 +193,7 @@ class ProductionService {
 
       // Populate the saved production
       const populatedProduction = await Production.findById(savedProduction._id)
-        .populate("createdBy", "name email")
+        .populate("createdBy", "firstName lastName email")
         .lean();
 
       // Log audit trail
@@ -225,11 +228,8 @@ class ProductionService {
       }
 
       // Validate operator if provided
-      if (updateData.operator) {
-        const operator = await User.findById(updateData.operator);
-        if (!operator) {
+      if (!updateData.operator) {
           throw new Error("Operator not found");
-        }
       }
 
       // Validate output details if provided
@@ -304,7 +304,7 @@ class ProductionService {
         updateData,
         { new: true, runValidators: true }
       )
-        .populate("createdBy", "name email")
+        .populate("createdBy", "firstName lastName email")
         .lean();
 
       // Log audit trail
@@ -563,6 +563,39 @@ class ProductionService {
     } catch (error) {
       throw new Error(`Failed to fetch production summary: ${error.message}`);
     }
+  }
+
+  // Get production audit trail
+  async getProductionAuditTrail(productionId, page = 1, limit = 20) {
+    // First check if production exists
+    const production = await Production.findById(productionId);
+    if (!production) {
+      throw new Error("Production not found");
+    }
+
+    // Calculate skip value for pagination
+    const skip = (page - 1) * limit;
+
+    // Get audit trail for this production with pagination
+    const result = await AuditLog.getResourceAuditTrail("Production", productionId, {
+      limit,
+      skip,
+    });
+
+    return {
+      success: true,
+      message: "Production audit trail retrieved successfully",
+      data: {
+        activities: result.logs,
+        pagination: {
+          currentPage: page,
+          totalItems: result.total,
+          itemsPerPage: limit,
+          totalPages: Math.ceil(result.total / limit),
+          hasMore: result.hasMore,
+        },
+      },
+    };
   }
 }
 

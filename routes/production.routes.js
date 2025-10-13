@@ -367,6 +367,65 @@ router.put('/:id', authenticate, authorize('production.update'), upload.array('a
 
 /**
  * @swagger
+ * /api/production/{id}/audit-trail:
+ *   get:
+ *     summary: Get production audit trail
+ *     description: Retrieve the audit trail (activity log) for a specific production
+ *     tags: [Production Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Production ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Number of items per page
+ *     responses:
+ *       200:
+ *         description: Production audit trail retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                   example: "Production audit trail retrieved successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     activities:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     pagination:
+ *                       type: object
+ *       404:
+ *         description: Production not found
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/:id/audit-trail', authenticate, authorize('production.read'), productionController.getProductionAuditTrail);
+
+/**
+ * @swagger
  * /api/production/{id}:
  *   delete:
  *     summary: Delete production record

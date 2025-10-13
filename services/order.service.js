@@ -259,7 +259,6 @@ async getOrderById(orderId) {
   // Create new order
   async createOrder(orderData, createdBy) {
     // Validate customer exists
-    console.log(orderData);
     const customer = await Customer.findById(orderData.customer);
     if (!customer) {
       throw new Error("Customer not found");
