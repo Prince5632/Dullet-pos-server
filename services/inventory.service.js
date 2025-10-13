@@ -1,95 +1,148 @@
+const { default: mongoose } = require("mongoose");
 const { Inventory, AuditLog } = require("../models");
 
 class InventoryService {
-  // Get all inventory records with filtering and pagination
-  async getAllInventory(query = {}) {
-    const {
-      page = 1,
-      limit = 10,
-      inventoryType,
-      godown,
-      unit,
-      dateFrom,
-      dateTo,
-      loggedBy,
-      search,
-    } = query;
+// Get all inventory records with filtering and pagination
+async getAllInventory(query = {}) {
+  const {
+    page = 1,
+    limit = 10,
+    inventoryType,
+    godown,
+    unit,
+    dateFrom,
+    dateTo,
+    loggedBy,
+    search,
+  } = query;
 
-    // Build filter object
-    const filter = {};
+  const skip = (page - 1) * limit;
+  const filter = {};
 
-    if (inventoryType) {
-      filter.inventoryType = inventoryType;
-    }
+  if (inventoryType) filter.inventoryType = inventoryType;
+  if (godown) filter.godown = new mongoose.Types.ObjectId(godown);
+  if (unit) filter.unit = unit;
 
-    if (godown) {
-      filter.godown = godown;
-    }
-
-    if (unit) {
-      filter.unit = unit;
-    }
-
-    if (loggedBy) {
-      filter.loggedBy = loggedBy;
-    }
-
-    // Date range filter
-    if (dateFrom || dateTo) {
-      filter.dateOfStock = {};
-      if (dateFrom) {
-        filter.dateOfStock.$gte = new Date(dateFrom);
-      }
-      if (dateTo) {
-        filter.dateOfStock.$lte = new Date(dateTo);
-      }
-    }
-
-    // Search across multiple fields
-    if (search) {
-      const searchConditions = [
-        { stockId: { $regex: search, $options: "i" } },
-        { inventoryType: { $regex: search, $options: "i" } },
-        { unit: { $regex: search, $options: "i" } },
-        { additionalNotes: { $regex: search, $options: "i" } }
-      ];
-
-      // If search is a valid number, also search in quantity field
-      const numericSearch = parseFloat(search);
-      if (!isNaN(numericSearch)) {
-        searchConditions.push({ quantity: numericSearch });
-      }
-
-      filter.$or = searchConditions;
-    }
-
-    const skip = (page - 1) * limit;
-
-    const [inventory, total] = await Promise.all([
-      Inventory.find(filter)
-        .populate("godown", "name location")
-        .populate("loggedBy", "firstName lastName")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
-      Inventory.countDocuments(filter),
-    ]);
-
-    return {
-      success: true,
-      data: {
-        inventory,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(total / limit),
-          totalRecords: total,
-          hasNext: page * limit < total,
-          hasPrev: page > 1,
-        },
-      },
-    };
+  if (dateFrom || dateTo) {
+    filter.dateOfStock = {};
+    if (dateFrom) filter.dateOfStock.$gte = new Date(dateFrom);
+    if (dateTo) filter.dateOfStock.$lte = new Date(dateTo);
   }
+
+  if (search) {
+    const searchConditions = [
+      { stockId: { $regex: search, $options: "i" } },
+      { inventoryType: { $regex: search, $options: "i" } },
+      { unit: { $regex: search, $options: "i" } },
+      { additionalNotes: { $regex: search, $options: "i" } },
+    ];
+
+    const numericSearch = parseFloat(search);
+    if (!isNaN(numericSearch)) {
+      searchConditions.push({ quantity: numericSearch });
+    }
+
+    filter.$or = searchConditions;
+  }
+
+  // --- START aggregation pipeline ---
+  const pipeline = [
+    { $match: filter },
+
+    // Lookup for loggedBy user details
+    {
+      $lookup: {
+        from: "users",
+        localField: "loggedBy",
+        foreignField: "_id",
+        as: "loggedByUser",
+      },
+    },
+    { $unwind: { path: "$loggedByUser", preserveNullAndEmptyArrays: true } },
+
+    // ✅ Lookup for godown details
+    {
+      $lookup: {
+        from: "godowns", // collection name in MongoDB
+        localField: "godown",
+        foreignField: "_id",
+        as: "godownData",
+      },
+    },
+    { $unwind: { path: "$godownData", preserveNullAndEmptyArrays: true } },
+  ];
+
+  // LoggedBy filter (name-based search)
+  if (loggedBy) {
+    const regex = new RegExp(loggedBy, "i");
+    pipeline.push({
+      $match: {
+        $or: [
+          { "loggedByUser.firstName": regex },
+          { "loggedByUser.lastName": regex },
+          {
+            $expr: {
+              $regexMatch: {
+                input: { $concat: ["$loggedByUser.firstName", " ", "$loggedByUser.lastName"] },
+                regex: loggedBy,
+                options: "i",
+              },
+            },
+          },
+        ],
+      },
+    });
+  }
+
+  // Sort, paginate, and project final fields
+  pipeline.push(
+    { $sort: { createdAt: -1 } },
+    { $skip: skip },
+    { $limit: parseInt(limit) },
+    {
+      $project: {
+        stockId: 1,
+        inventoryType: 1,
+        unit: 1,
+        quantity: 1,
+        dateOfStock: 1,
+        additionalNotes: 1,
+        createdAt: 1,
+        "loggedByUser.firstName": 1,
+        "loggedByUser.lastName": 1,
+        // ✅ Include godown details
+        "godownData._id": 1,
+        "godownData.name": 1,
+        "godownData.location": 1,
+      },
+    }
+  );
+
+  // Count total records (before pagination)
+  const [inventory, totalResult] = await Promise.all([
+    Inventory.aggregate(pipeline),
+    Inventory.aggregate([
+      ...pipeline.slice(0, 4), // match + lookups only, before skip/limit
+      { $count: "total" },
+    ]),
+  ]);
+
+  const total = totalResult?.[0]?.total || 0;
+
+  return {
+    success: true,
+    data: {
+      inventory,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / limit),
+        totalRecords: total,
+        hasNext: page * limit < total,
+        hasPrev: page > 1,
+      },
+    },
+  };
+}
 
   // Get inventory record by ID
   async getInventoryById(inventoryId) {
@@ -111,7 +164,7 @@ class InventoryService {
   // Create new inventory record
   async createInventory(inventoryData, loggedBy) {
     // Validate required fields
-    const requiredFields = ['inventoryType', 'dateOfStock', 'quantity', 'unit'];
+    const requiredFields = ["inventoryType", "dateOfStock", "quantity", "unit"];
     for (const field of requiredFields) {
       if (!inventoryData[field]) {
         throw new Error(`${field} is required`);
@@ -119,15 +172,15 @@ class InventoryService {
     }
 
     // Validate enum values
-    const validInventoryTypes = ['New Stock', 'Stock Sold', 'Damaged / Return'];
-    const validUnits = ['Kg', 'Quintal',"40Kg Bag","50Kg Bag"];
+    const validInventoryTypes = ["New Stock", "Stock Sold", "Damaged / Return"];
+    const validUnits = ["Kg", "Quintal", "40Kg Bag", "50Kg Bag"];
 
     if (!validInventoryTypes.includes(inventoryData.inventoryType)) {
-      throw new Error('Invalid inventory type');
+      throw new Error("Invalid inventory type");
     }
 
     if (!validUnits.includes(inventoryData.unit)) {
-      throw new Error('Invalid unit');
+      throw new Error("Invalid unit");
     }
 
     // Create inventory record
@@ -173,16 +226,20 @@ class InventoryService {
 
     // Validate enum values if they are being updated
     if (updateData.inventoryType) {
-      const validInventoryTypes = ['New Stock', 'Stock Sold', 'Damaged / Return'];
+      const validInventoryTypes = [
+        "New Stock",
+        "Stock Sold",
+        "Damaged / Return",
+      ];
       if (!validInventoryTypes.includes(updateData.inventoryType)) {
-        throw new Error('Invalid inventory type');
+        throw new Error("Invalid inventory type");
       }
     }
 
     if (updateData.unit) {
-      const validUnits = ['Kg', 'Quintal',"40Kg Bag","50Kg Bag"];
+      const validUnits = ["Kg", "Quintal", "40Kg Bag", "50Kg Bag"];
       if (!validUnits.includes(updateData.unit)) {
-        throw new Error('Invalid unit');
+        throw new Error("Invalid unit");
       }
     }
 
@@ -253,7 +310,7 @@ class InventoryService {
 
     // Build filter for stats
     const filter = {};
-    
+
     if (godown) {
       filter.godown = godown;
     }
@@ -278,14 +335,14 @@ class InventoryService {
               $cond: [
                 { $eq: ["$unit", "Quintal"] },
                 { $multiply: ["$quantity", 100] },
-                "$quantity"
-              ]
-            }
+                "$quantity",
+              ],
+            },
           },
           totalRecords: { $sum: 1 },
-          avgPricePerKg: { $avg: "$pricePerKg" }
-        }
-      }
+          avgPricePerKg: { $avg: "$pricePerKg" },
+        },
+      },
     ]);
 
     // Calculate total stock in Kg
@@ -299,20 +356,20 @@ class InventoryService {
               $cond: [
                 { $eq: ["$unit", "Quintal"] },
                 { $multiply: ["$quantity", 100] },
-                "$quantity"
-              ]
-            }
+                "$quantity",
+              ],
+            },
           },
-          totalRecords: { $sum: 1 }
-        }
-      }
+          totalRecords: { $sum: 1 },
+        },
+      },
     ]);
 
     return {
       success: true,
       data: {
         byType: stats,
-        total: totalStockStats[0] || { totalStockKg: 0, totalRecords: 0 }
+        total: totalStockStats[0] || { totalStockKg: 0, totalRecords: 0 },
       },
     };
   }
@@ -368,7 +425,6 @@ class InventoryService {
   // Get inventory audit trail
   async getInventoryAuditTrail(inventoryId, options = {}) {
     const { page = 1, limit = 10 } = options;
-
     // First check if inventory exists
     const inventory = await Inventory.findById(inventoryId);
     if (!inventory) {
@@ -379,10 +435,14 @@ class InventoryService {
     const skip = (page - 1) * limit;
 
     // Get audit trail for this inventory with pagination
-    const result = await AuditLog.getResourceAuditTrail("Inventory", inventoryId, {
-      limit,
-      skip,
-    });
+    const result = await AuditLog.getResourceAuditTrail(
+      "Inventory",
+      inventoryId,
+      {
+        limit,
+        skip,
+      }
+    );
 
     return {
       success: true,
