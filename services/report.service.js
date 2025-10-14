@@ -72,6 +72,16 @@ exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue',
         }
       },
 
+      // ✅ Filter users based on godown access when godown filtering is applied
+      ...(Object.keys(godownAccessFilter).length > 0 ? [{
+        $match: {
+          $or: [
+            { primaryGodown: { $in: godownAccessFilter.godown.$in || [godownAccessFilter.godown] } },
+            { accessibleGodowns: { $in: godownAccessFilter.godown.$in || [godownAccessFilter.godown] } }
+          ]
+        }
+      }] : []),
+
       // ✅ Lookup their orders (even if none)
       {
         $lookup: {
