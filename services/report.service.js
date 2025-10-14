@@ -100,8 +100,8 @@ exports.getSalesExecutiveReports = async (filters = {}, sortBy = 'totalRevenue',
               ? [{
                   $match: {
                     orderDate: {
-                      ...(dateRange.startDate ? { $gte: new Date(dateRange.startDate) } : {}),
-                      ...(dateRange.endDate ? { $lte: new Date(dateRange.endDate + 'T23:59:59.999Z') } : {})
+                      ...(dateRange.startDate ? { $gte: dateRange.startDate } : {}),
+                      ...(dateRange.endDate ? { $lte: dateRange.endDate} : {}),
                     }
                   }
                 }]
@@ -241,12 +241,10 @@ exports.getGodownSalesReports = async (filters = {}, sortBy = 'totalRevenue', so
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
       matchCriteria.orderDate = {};
       if (dateRange.startDate) {
-        matchCriteria.orderDate.$gte = new Date(dateRange.startDate);
+        matchCriteria.orderDate.$gte = dateRange.startDate;
       }
       if (dateRange.endDate) {
-        const endDate = new Date(dateRange.endDate);
-        endDate.setHours(23, 59, 59, 999);
-        matchCriteria.orderDate.$lte = endDate;
+        matchCriteria.orderDate.$lte = dateRange.endDate;
       }
     }
 
@@ -329,12 +327,10 @@ exports.getCustomerReports = async (filters = {}, sortBy = 'totalSpent', sortOrd
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
       matchCriteria.orderDate = {};
       if (dateRange.startDate) {
-        matchCriteria.orderDate.$gte = new Date(dateRange.startDate);
+        matchCriteria.orderDate.$gte = dateRange.startDate;
       }
       if (dateRange.endDate) {
-        const endDate = new Date(dateRange.endDate);
-        endDate.setHours(23, 59, 59, 999);
-        matchCriteria.orderDate.$lte = endDate;
+        matchCriteria.orderDate.$lte = dateRange.endDate;
       }
     }
 
@@ -554,12 +550,10 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
       matchCriteria.orderDate = {};
       if (dateRange.startDate) {
-        matchCriteria.orderDate.$gte = new Date(dateRange.startDate);
+        matchCriteria.orderDate.$gte = dateRange.startDate;
       }
       if (dateRange.endDate) {
-        const endDate = new Date(dateRange.endDate);
-        endDate.setHours(23, 59, 59, 999);
-        matchCriteria.orderDate.$lte = endDate;
+        matchCriteria.orderDate.$lte = dateRange.endDate;
       }
     }
 
@@ -946,12 +940,10 @@ exports.getCustomerPurchaseDetail = async (customerId, filters = {}) => {
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
       matchCriteria.orderDate = {};
       if (dateRange.startDate) {
-        matchCriteria.orderDate.$gte = new Date(dateRange.startDate);
+        matchCriteria.orderDate.$gte = dateRange.startDate;
       }
       if (dateRange.endDate) {
-        const endDate = new Date(dateRange.endDate);
-        endDate.setHours(23, 59, 59, 999);
-        matchCriteria.orderDate.$lte = endDate;
+        matchCriteria.orderDate.$lte = dateRange.endDate;
       }
     }
 

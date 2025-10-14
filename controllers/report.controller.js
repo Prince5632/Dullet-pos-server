@@ -1,5 +1,5 @@
-const reportService = require('../services/report.service');
-const { sendSuccess, sendError } = require('../utils/response');
+const reportService = require("../services/report.service");
+const { sendSuccess, sendError } = require("../utils/response");
 
 /**
  * Get Sales Executive Reports
@@ -7,16 +7,30 @@ const { sendSuccess, sendError } = require('../utils/response');
  */
 exports.getSalesExecutiveReports = async (req, res) => {
   try {
-    const { startDate, endDate, userId, sortBy = 'totalRevenue', sortOrder = 'desc', department, godownId, type } = req.query;
+    const {
+      startDate,
+      endDate,
+      userId,
+      sortBy = "totalRevenue",
+      sortOrder = "desc",
+      department,
+      godownId,
+      type,
+    } = req.query;
 
     const filters = {};
     if (startDate || endDate) {
       filters.dateRange = {};
+
       if (startDate) {
-        filters.dateRange.startDate = new Date(startDate);
+        const dateFrom = new Date(startDate);
+        dateFrom.setHours(0, 0, 0, 0);
+        filters.dateRange.startDate = dateFrom;
       }
       if (endDate) {
-        filters.dateRange.endDate = new Date(endDate);
+        const dateTo = new Date(endDate);
+        dateTo.setHours(23, 59, 59, 999);
+        filters.dateRange.endDate = dateTo;
       }
     }
     if (userId) {
@@ -33,11 +47,20 @@ exports.getSalesExecutiveReports = async (req, res) => {
       filters.type = type;
     }
 
-    const report = await reportService.getSalesExecutiveReports(filters, sortBy, sortOrder, req.user);
+    const report = await reportService.getSalesExecutiveReports(
+      filters,
+      sortBy,
+      sortOrder,
+      req.user
+    );
 
-    return sendSuccess(res, report, 'Sales executive reports retrieved successfully');
+    return sendSuccess(
+      res,
+      report,
+      "Sales executive reports retrieved successfully"
+    );
   } catch (error) {
-    console.error('Error fetching sales executive reports:', error);
+    console.error("Error fetching sales executive reports:", error);
     return sendError(res, error.message, 500);
   }
 };
@@ -48,24 +71,42 @@ exports.getSalesExecutiveReports = async (req, res) => {
  */
 exports.getGodownSalesReports = async (req, res) => {
   try {
-    const { startDate, endDate, sortBy = 'totalRevenue', sortOrder = 'desc' } = req.query;
+    const {
+      startDate,
+      endDate,
+      sortBy = "totalRevenue",
+      sortOrder = "desc",
+    } = req.query;
 
     const filters = {};
     if (startDate || endDate) {
       filters.dateRange = {};
       if (startDate) {
-        filters.dateRange.startDate = new Date(startDate);
+        const dateFrom = new Date(startDate);
+        dateFrom.setHours(0, 0, 0, 0);
+        filters.dateRange.startDate = dateFrom;
       }
       if (endDate) {
-        filters.dateRange.endDate = new Date(endDate);
+        const dateTo = new Date(endDate);
+        dateTo.setHours(23, 59, 59, 999);
+        filters.dateRange.endDate = dateTo;
       }
     }
 
-    const report = await reportService.getGodownSalesReports(filters, sortBy, sortOrder, req.user);
+    const report = await reportService.getGodownSalesReports(
+      filters,
+      sortBy,
+      sortOrder,
+      req.user
+    );
 
-    return sendSuccess(res, report, 'Godown-wise sales reports retrieved successfully');
+    return sendSuccess(
+      res,
+      report,
+      "Godown-wise sales reports retrieved successfully"
+    );
   } catch (error) {
-    console.error('Error fetching godown sales reports:', error);
+    console.error("Error fetching godown sales reports:", error);
     return sendError(res, error.message, 500);
   }
 };
@@ -76,23 +117,27 @@ exports.getGodownSalesReports = async (req, res) => {
  */
 exports.getCustomerReports = async (req, res) => {
   try {
-    const { 
-      startDate, 
-      endDate, 
-      customerId, 
-      sortBy = 'totalSpent', 
-      sortOrder = 'desc',
-      inactiveDays // Dynamic parameter for inactive customers
+    const {
+      startDate,
+      endDate,
+      customerId,
+      sortBy = "totalSpent",
+      sortOrder = "desc",
+      inactiveDays, // Dynamic parameter for inactive customers
     } = req.query;
 
     const filters = {};
     if (startDate || endDate) {
       filters.dateRange = {};
-      if (startDate) {
-        filters.dateRange.startDate = new Date(startDate);
+       if (startDate) {
+        const dateFrom = new Date(startDate);
+        dateFrom.setHours(0, 0, 0, 0);
+        filters.dateRange.startDate = dateFrom;
       }
       if (endDate) {
-        filters.dateRange.endDate = new Date(endDate);
+        const dateTo = new Date(endDate);
+        dateTo.setHours(23, 59, 59, 999);
+        filters.dateRange.endDate = dateTo;
       }
     }
     if (customerId) {
@@ -102,11 +147,16 @@ exports.getCustomerReports = async (req, res) => {
       filters.inactiveDays = parseInt(inactiveDays);
     }
 
-    const report = await reportService.getCustomerReports(filters, sortBy, sortOrder, req.user);
+    const report = await reportService.getCustomerReports(
+      filters,
+      sortBy,
+      sortOrder,
+      req.user
+    );
 
-    return sendSuccess(res, report, 'Customer reports retrieved successfully');
+    return sendSuccess(res, report, "Customer reports retrieved successfully");
   } catch (error) {
-    console.error('Error fetching customer reports:', error);
+    console.error("Error fetching customer reports:", error);
     return sendError(res, error.message, 500);
   }
 };
@@ -119,11 +169,17 @@ exports.getInactiveCustomers = async (req, res) => {
   try {
     const { days = 7 } = req.query;
 
-    const inactiveCustomers = await reportService.getInactiveCustomers(parseInt(days));
+    const inactiveCustomers = await reportService.getInactiveCustomers(
+      parseInt(days)
+    );
 
-    return sendSuccess(res, inactiveCustomers, 'Inactive customers retrieved successfully');
+    return sendSuccess(
+      res,
+      inactiveCustomers,
+      "Inactive customers retrieved successfully"
+    );
   } catch (error) {
-    console.error('Error fetching inactive customers:', error);
+    console.error("Error fetching inactive customers:", error);
     return sendError(res, error.message, 500);
   }
 };
@@ -141,21 +197,32 @@ exports.getExecutivePerformanceDetail = async (req, res) => {
     if (startDate || endDate) {
       filters.dateRange = {};
       if (startDate) {
-        filters.dateRange.startDate = new Date(startDate);
+        const dateFrom = new Date(startDate);
+        dateFrom.setHours(0, 0, 0, 0);
+        filters.dateRange.startDate = dateFrom;
       }
       if (endDate) {
-        filters.dateRange.endDate = new Date(endDate);
+        const dateTo = new Date(endDate);
+        dateTo.setHours(23, 59, 59, 999);
+        filters.dateRange.endDate = dateTo;
       }
     }
     if (type) {
       filters.type = type;
     }
 
-    const detail = await reportService.getExecutivePerformanceDetail(userId, filters);
+    const detail = await reportService.getExecutivePerformanceDetail(
+      userId,
+      filters
+    );
 
-    return sendSuccess(res, detail, 'Executive performance detail retrieved successfully');
+    return sendSuccess(
+      res,
+      detail,
+      "Executive performance detail retrieved successfully"
+    );
   } catch (error) {
-    console.error('Error fetching executive performance detail:', error);
+    console.error("Error fetching executive performance detail:", error);
     return sendError(res, error.message, 500);
   }
 };
@@ -173,19 +240,29 @@ exports.getCustomerPurchaseDetail = async (req, res) => {
     if (startDate || endDate) {
       filters.dateRange = {};
       if (startDate) {
-        filters.dateRange.startDate = new Date(startDate);
+        const dateFrom = new Date(startDate);
+        dateFrom.setHours(0, 0, 0, 0);
+        filters.dateRange.startDate = dateFrom;
       }
       if (endDate) {
-        filters.dateRange.endDate = new Date(endDate);
+        const dateTo = new Date(endDate);
+        dateTo.setHours(23, 59, 59, 999);
+        filters.dateRange.endDate = dateTo;
       }
     }
 
-    const detail = await reportService.getCustomerPurchaseDetail(customerId, filters);
+    const detail = await reportService.getCustomerPurchaseDetail(
+      customerId,
+      filters
+    );
 
-    return sendSuccess(res, detail, 'Customer purchase detail retrieved successfully');
+    return sendSuccess(
+      res,
+      detail,
+      "Customer purchase detail retrieved successfully"
+    );
   } catch (error) {
-    console.error('Error fetching customer purchase detail:', error);
+    console.error("Error fetching customer purchase detail:", error);
     return sendError(res, error.message, 500);
   }
 };
-
