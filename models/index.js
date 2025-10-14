@@ -10,6 +10,7 @@ const Attendance = require('./attendance.schema');
 const Inventory = require('./inventory.schema');
 const Transit = require('./transit.schema');
 const Production = require('./production.schema');
+const DeliveryTimePdfChanges = require('./deliveryTimePdfChanges.schema');
 
 module.exports = {
   User,
@@ -23,7 +24,8 @@ module.exports = {
   Attendance,
   Inventory,
   Transit,
-  Production
+  Production,
+  DeliveryTimePdfChanges
 };
 
 // Helper to seed core defaults where available

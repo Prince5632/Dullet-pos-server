@@ -551,6 +551,93 @@ const getVisitAuditTrail = async (req, res) => {
   }
 };
 
+// Get delivery time PDF changes by order ID
+const getDeliveryTimePdfChanges = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    // Validate orderId parameter
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID is required'
+      });
+    }
+
+    // Validate MongoDB ObjectId format
+    if (!orderId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Order ID format'
+      });
+    }
+
+    const result = await orderService.getDeliveryTimePdfChangesByOrderId(orderId);
+    res.status(200).json(result);
+  } catch (error) {
+    buildErrorResponse(res, error);
+  }
+};
+
+// Create delivery time PDF changes entry
+const createDeliveryTimePdfChanges = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    // Validate orderId parameter
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID is required'
+      });
+    }
+
+    // Validate MongoDB ObjectId format
+    if (!orderId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Order ID format'
+      });
+    }
+
+    const result = await orderService.createDeliveryTimePdfChangesFromOrder(orderId);
+    
+    // Return 200 if already exists, 201 if newly created
+    const statusCode = result.message === 'Delivery time PDF changes already exists' ? 200 : 201;
+    res.status(statusCode).json(result);
+  } catch (error) {
+    buildErrorResponse(res, error);
+  }
+};
+
+// Get or create delivery time PDF changes (main endpoint)
+const getOrCreateDeliveryTimePdfChanges = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    // Validate orderId parameter
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID is required'
+      });
+    }
+
+    // Validate MongoDB ObjectId format
+    if (!orderId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Order ID format'
+      });
+    }
+
+    const result = await orderService.getOrCreateDeliveryTimePdfChanges(orderId);
+    res.status(200).json(result);
+  } catch (error) {
+    buildErrorResponse(res, error);
+  }
+};
+
 module.exports = {
   getAllOrders,
   getOrderById,
@@ -581,6 +668,9 @@ module.exports = {
   getVisitById,
   updateVisit,
   getOrderAuditTrail,
-  getVisitAuditTrail
+  getVisitAuditTrail,
+  getDeliveryTimePdfChanges,
+  createDeliveryTimePdfChanges,
+  getOrCreateDeliveryTimePdfChanges
 };
 

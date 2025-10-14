@@ -1264,5 +1264,169 @@ router.get('/stats/summary', authenticate, authorize('orders.read'), orderContro
  */
 router.post('/visits', authenticate, authorize('orders.create'), upload.single('capturedImage'), orderController.createVisit);
 
+/**
+ * @swagger
+ * /api/orders/{orderId}/delivery-time-pdf-changes:
+ *   get:
+ *     summary: Get delivery time PDF changes by order ID
+ *     description: Retrieve delivery time PDF changes data for a specific order
+ *     tags: [Delivery Time PDF Changes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order ID
+ *     responses:
+ *       200:
+ *         description: Delivery time PDF changes retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                     orderId:
+ *                       type: string
+ *                     customerId:
+ *                       type: string
+ *                     items:
+ *                       type: array
+ *                     subTotal:
+ *                       type: number
+ *                     taxAmount:
+ *                       type: number
+ *                     previousBalance:
+ *                       type: number
+ *                     totalAmount:
+ *                       type: number
+ *                     paidAmount:
+ *                       type: number
+ *                     netBalanceRemaining:
+ *                       type: number
+ *                     recordedAt:
+ *                       type: string
+ *                       format: date-time
+ *                     recordedBy:
+ *                       type: string
+ *       404:
+ *         description: Delivery time PDF changes not found
+ *       400:
+ *         description: Invalid order ID
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get('/:orderId/delivery-time-pdf-changes', authenticate, authorize('orders.read'), orderController.getDeliveryTimePdfChanges);
+
+/**
+ * @swagger
+ * /api/orders/{orderId}/delivery-time-pdf-changes:
+ *   post:
+ *     summary: Create delivery time PDF changes entry
+ *     description: Create a new delivery time PDF changes entry for a specific order
+ *     tags: [Delivery Time PDF Changes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order ID
+ *     responses:
+ *       201:
+ *         description: Delivery time PDF changes created successfully
+ *       200:
+ *         description: Delivery time PDF changes already exists
+ *       404:
+ *         description: Order not found
+ *       400:
+ *         description: Invalid order ID
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.post('/:orderId/delivery-time-pdf-changes', authenticate, authorize('orders.create'), orderController.createDeliveryTimePdfChanges);
+
+/**
+ * @swagger
+ * /api/orders/{orderId}/delivery-time-pdf-changes/get-or-create:
+ *   get:
+ *     summary: Get or create delivery time PDF changes
+ *     description: Retrieve existing delivery time PDF changes or create new entry if not found
+ *     tags: [Delivery Time PDF Changes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order ID
+ *     responses:
+ *       200:
+ *         description: Delivery time PDF changes retrieved or created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                     orderId:
+ *                       type: string
+ *                     customerId:
+ *                       type: string
+ *                     items:
+ *                       type: array
+ *                     subTotal:
+ *                       type: number
+ *                     taxAmount:
+ *                       type: number
+ *                     previousBalance:
+ *                       type: number
+ *                     totalAmount:
+ *                       type: number
+ *                     paidAmount:
+ *                       type: number
+ *                     netBalanceRemaining:
+ *                       type: number
+ *                     recordedAt:
+ *                       type: string
+ *                       format: date-time
+ *                     recordedBy:
+ *                       type: string
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Order not found
+ *       400:
+ *         description: Invalid order ID
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get('/:orderId/delivery-time-pdf-changes/get-or-create', authenticate, authorize('orders.read'), orderController.getOrCreateDeliveryTimePdfChanges);
+
 module.exports = router;
 

@@ -235,7 +235,7 @@ router.get('/:id', authenticate,authorize('production.read'), productionControll
  *                   properties:
  *                     itemName:
  *                       type: string
- *                       enum: [Atta, Chokar]
+ *                       enum: [Atta, Chokar, Wastage]
  *                       description: Output item name
  *                     productQty:
  *                       type: number
@@ -327,7 +327,7 @@ router.post('/', authenticate, authorize('production.create'), upload.array('att
  *                   properties:
  *                     itemName:
  *                       type: string
- *                       enum: [Atta, Chokar]
+ *                       enum: [Atta, Chokar, Wastage]
  *                       description: Output item name
  *                     productQty:
  *                       type: number
@@ -509,7 +509,7 @@ router.delete('/:id', authenticate,authorize('production.delete'), productionCon
  *             properties:
  *               itemName:
  *                 type: string
- *                 enum: [Atta, Chokar]
+ *                 enum: [Atta, Chokar, Wastage]
  *                 description: Output item name
  *               productQty:
  *                 type: number

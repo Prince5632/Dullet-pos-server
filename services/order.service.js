@@ -1,4 +1,9 @@
-const { Order, Customer, Godown } = require("../models");
+const {
+  Order,
+  Customer,
+  Godown,
+  DeliveryTimePdfChanges,
+} = require("../models");
 const { AuditLog } = require("../models");
 const transactionService = require("./transaction.service");
 const {
@@ -11,6 +16,45 @@ const {
 const { default: mongoose } = require("mongoose");
 
 class OrderService {
+  /**
+   * Calculate the previous outstanding balance for a customer.
+   * Optionally exclude a specific order (e.g., during order update).
+   */
+  async calculatePreviousBalance(customerId, excludeOrderId = null) {
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      throw new Error("Customer not found");
+    }
+
+    // Build filter
+    const filter = {
+      customer: customerId,
+      type: "order",
+    };
+
+    if (excludeOrderId) {
+      filter._id = { $ne: excludeOrderId };
+    }
+
+    // Get other orders for this customer
+    const otherCustomerOrders = await Order.find(filter)
+      .select("totalAmount paidAmount")
+      .lean();
+
+    // Safe number conversion helper
+    const safeNumber = (val) => (isNaN(Number(val)) ? 0 : Number(val));
+
+    // Calculate total previous balance
+    const previousBalance = otherCustomerOrders.reduce((total, ord) => {
+      const totalAmt = safeNumber(ord.totalAmount);
+      const paidAmt = safeNumber(ord.paidAmount);
+      const outstanding = Math.max(0, totalAmt - paidAmt);
+      return total + outstanding;
+    }, 0);
+
+    return previousBalance;
+  }
+
   // Get all orders with pagination and filtering
   async getAllOrders(query = {}, currentUser) {
     const {
@@ -194,8 +238,8 @@ class OrderService {
       Order.countDocuments(filter),
       Order.aggregate([
         { $match: filter },
-        { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } }
-      ]).then(result => result.length > 0 ? result[0].totalSum : 0),
+        { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } },
+      ]).then((result) => (result.length > 0 ? result[0].totalSum : 0)),
     ]);
 
     const totalPages = Math.ceil(totalOrders / parseInt(limit));
@@ -217,49 +261,53 @@ class OrderService {
     };
   }
 
-async getOrderById(orderId) {
-  const order = await Order.findById(orderId)
-    .populate("customer")
-    .populate("godown", "name location contact")
-    .populate("createdBy", "firstName lastName")
-    .populate("approvedBy", "firstName lastName")
-    .populate("driverAssignment.driver", "firstName lastName phone")
-    .lean();
-
-  if (!order) {
-    throw new Error("Order not found");
-  }
-
-  // Calculate customer's remaining (outstanding) value
-  if (order.customer?._id) {
-    const customerId = order.customer._id;
-
-    const outstandingOrders = await Order.find({
-      customer: customerId,
-      type: "order", // Only consider orders, not visits
-      paymentStatus: { $in: ["pending", "partial", "overdue"] },
-    })
-      .select("totalAmount paidAmount")
+  async getOrderById(orderId) {
+    const order = await Order.findById(orderId)
+      .populate("customer")
+      .populate("godown", "name location contact")
+      .populate("createdBy", "firstName lastName")
+      .populate("approvedBy", "firstName lastName")
+      .populate("driverAssignment.driver", "firstName lastName phone")
       .lean();
 
-    const calculatedOutstanding = outstandingOrders.reduce((total, ord) => {
-      return total + (ord.totalAmount - (ord.paidAmount || 0));
-    }, 0);
+    if (!order) {
+      throw new Error("Order not found");
+    }
 
-    // Attach outstanding amount to the customer data
-    order.customer.outstandingAmount = Math.max(0, calculatedOutstanding);
+    // Calculate customer's remaining (outstanding) value
+    if (order.customer?._id) {
+      const customerId = order.customer._id;
+
+      const outstandingOrders = await Order.find({
+        customer: customerId,
+        type: "order", // Only consider orders, not visits
+        paymentStatus: { $in: ["pending", "partial", "overdue"] },
+      })
+        .select("totalAmount paidAmount")
+        .lean();
+
+      const calculatedOutstanding = outstandingOrders.reduce((total, ord) => {
+        return total + (ord.totalAmount - (ord.paidAmount || 0));
+      }, 0);
+
+      // Attach outstanding amount to the customer data
+      order.customer.outstandingAmount = Math.max(0, calculatedOutstanding);
+    }
+
+    return {
+      success: true,
+      data: { order },
+    };
   }
-
-  return {
-    success: true,
-    data: { order },
-  };
-}
 
   // Create new order
   async createOrder(orderData, createdBy) {
     // Validate customer exists
     const customer = await Customer.findById(orderData.customer);
+    // Calculate previous balance
+    const previousBalance = await this.calculatePreviousBalance(
+      orderData.customer
+    );
     if (!customer) {
       throw new Error("Customer not found");
     }
@@ -332,19 +380,40 @@ async getOrderById(orderId) {
 
     await order.save();
 
+    // Record delivery time PDF changes for orders with payment
+    // if (order.type === "order") {
+    //   try {
+    //     await this.recordDeliveryTimePdfChanges(
+    //       order,
+    //       order.paidAmount,
+    //       createdBy,
+    //       previousBalance
+    //     );
+    //   } catch (pdfError) {
+    //     console.error(
+    //       "Error recording delivery time PDF changes during order creation:",
+    //       pdfError
+    //     );
+    //     // Don't fail the order creation if PDF recording fails
+    //   }
+    // }
+
     // Record transaction if there's an initial payment
     if (order.totalAmount) {
       try {
-        await transactionService.createTransaction({
-          transactionMode: order.paymentTerms || 'Cash',
-          transactionForModel: 'Order',
-          transactionFor: [order._id],
-          customer: order.customer,
-          amountPaid: order.paidAmount,
-          createdFromService: "order",
-          transactionDate: new Date()
-        }, createdBy);
-        
+        await transactionService.createTransaction(
+          {
+            transactionMode: order.paymentTerms || "Cash",
+            transactionForModel: "Order",
+            transactionFor: [order._id],
+            customer: order.customer,
+            amountPaid: order.paidAmount,
+            createdFromService: "order",
+            transactionDate: new Date(),
+          },
+          createdBy
+        );
+
         // Log transaction creation in audit
         await AuditLog.create({
           user: createdBy,
@@ -357,7 +426,10 @@ async getOrderById(orderId) {
           userAgent: "System",
         });
       } catch (transactionError) {
-        console.error('Error creating transaction for order:', transactionError);
+        console.error(
+          "Error creating transaction for order:",
+          transactionError
+        );
         // Don't fail the order creation if transaction recording fails
       }
     }
@@ -391,6 +463,11 @@ async getOrderById(orderId) {
   // Update order
   async updateOrder(orderId, updateData, updatedBy) {
     const order = await Order.findById(orderId);
+    // Calculate previous balance
+    const previousBalance = await this.calculatePreviousBalance(
+      order.customer,
+      orderId
+    );
     if (!order) {
       throw new Error("Order not found");
     }
@@ -404,6 +481,28 @@ async getOrderById(orderId) {
     Object.assign(order, updateData, { updatedBy });
     await order.save();
 
+    // Record delivery time PDF changes if paidAmount changed for orders
+    // if (
+    //   order.type === "order" &&
+    //   typeof updateData.paidAmount === "number" &&
+    //   updateData.paidAmount !== oldPaidAmount
+    // ) {
+    //   try {
+    //     await this.recordDeliveryTimePdfChanges(
+    //       order,
+    //       updateData.paidAmount,
+    //       updatedBy,
+    //       previousBalance
+    //     );
+    //   } catch (pdfError) {
+    //     console.error(
+    //       "Error recording delivery time PDF changes during order update:",
+    //       pdfError
+    //     );
+    //     // Don't fail the order update if PDF recording fails
+    //   }
+    // }
+
     // Record transaction if paidAmount increased
     if (
       typeof updateData.paidAmount === "number" &&
@@ -412,16 +511,19 @@ async getOrderById(orderId) {
     ) {
       const amountDifference = updateData.paidAmount - (oldPaidAmount || 0);
       try {
-        await transactionService.createTransaction({
-          transactionMode: order.paymentTerms || 'Cash',
-          transactionForModel: 'Order',
-          transactionFor: [order._id],
-          customer: order.customer,
-          amountPaid: amountDifference,
-          createdFromService: "order",
-          transactionDate: new Date()
-        }, updatedBy);
-        
+        await transactionService.createTransaction(
+          {
+            transactionMode: order.paymentTerms || "Cash",
+            transactionForModel: "Order",
+            transactionFor: [order._id],
+            customer: order.customer,
+            amountPaid: amountDifference,
+            createdFromService: "order",
+            transactionDate: new Date(),
+          },
+          updatedBy
+        );
+
         // Log transaction creation in audit
         await AuditLog.create({
           user: updatedBy,
@@ -434,7 +536,10 @@ async getOrderById(orderId) {
           userAgent: "System",
         });
       } catch (transactionError) {
-        console.error('Error creating transaction for order update:', transactionError);
+        console.error(
+          "Error creating transaction for order update:",
+          transactionError
+        );
         // Don't fail the order update if transaction recording fails
       }
     }
@@ -950,6 +1055,11 @@ async getOrderById(orderId) {
 
   async recordDelivery(orderId, user, payload = {}) {
     const order = await Order.findById(orderId);
+    // Calculate previous balance
+    const previousBalance = await this.calculatePreviousBalance(
+      order.customer,
+      orderId
+    );
     if (!order) throw new Error("Order not found");
 
     if (order.status !== "out_for_delivery") {
@@ -986,7 +1096,7 @@ async getOrderById(orderId) {
     // Calculate payment updates
     const amountCollected = payload.settlement?.amountCollected || 0;
     const newPaidAmount = (order.paidAmount || 0) + amountCollected;
-    
+
     // Update payment status based on new paid amount
     let newPaymentStatus = order.paymentStatus;
     if (newPaidAmount >= order.totalAmount) {
@@ -1012,33 +1122,58 @@ async getOrderById(orderId) {
         recordedAt: new Date(),
       },
     ];
-    
+
     // Update payment fields
     order.paidAmount = newPaidAmount;
     order.paymentStatus = newPaymentStatus;
-    
+
     // Update payment terms if provided
-    if (payload.paymentTerms && ['Cash', 'Credit', 'Advance', 'Cheque', 'Online'].includes(payload.paymentTerms)) {
+    if (
+      payload.paymentTerms &&
+      ["Cash", "Credit", "Advance", "Cheque", "Online"].includes(
+        payload.paymentTerms
+      )
+    ) {
       order.paymentTerms = payload.paymentTerms;
     }
-    
+
     order.updatedBy = user._id;
 
     await order.save();
 
+    // Record delivery time PDF changes if payment amount changed
+    try {
+      await this.recordDeliveryTimePdfChanges(
+        order,
+        newPaidAmount,
+        user._id,
+        previousBalance
+      );
+    } catch (pdfError) {
+      console.error(
+        "Error recording delivery time PDF changes during delivery:",
+        pdfError
+      );
+      // Don't fail the delivery recording if PDF recording fails
+    }
+
     // Record transaction if amount was collected during delivery
     if (amountCollected > 0) {
       try {
-        await transactionService.createTransaction({
-          transactionMode: payload.paymentTerms || order.paymentTerms || 'Cash',
-          transactionForModel: 'Order',
-          transactionFor: [order._id],
-          customer: order.customer,
-          amountPaid: amountCollected,
-          createdFromService: "order",
-          transactionDate: new Date()
-        }, user._id);
-        
+        await transactionService.createTransaction(
+          {
+            transactionMode:
+              payload.paymentTerms || order.paymentTerms || "Cash",
+            transactionForModel: "Order",
+            transactionFor: [order._id],
+            customer: order.customer,
+            amountPaid: amountCollected,
+            createdFromService: "order",
+            transactionDate: new Date(),
+          },
+          user._id
+        );
+
         // Log transaction creation in audit
         await AuditLog.create({
           user: user._id,
@@ -1051,7 +1186,10 @@ async getOrderById(orderId) {
           userAgent: "System",
         });
       } catch (transactionError) {
-        console.error('Error creating transaction for delivery:', transactionError);
+        console.error(
+          "Error creating transaction for delivery:",
+          transactionError
+        );
         // Don't fail the delivery recording if transaction recording fails
       }
     }
@@ -1127,8 +1265,8 @@ async getOrderById(orderId) {
       Order.countDocuments(filter),
       Order.aggregate([
         { $match: filter },
-        { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } }
-      ]).then(result => result.length > 0 ? result[0].totalSum : 0),
+        { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } },
+      ]).then((result) => (result.length > 0 ? result[0].totalSum : 0)),
     ]);
 
     const totalPages = Math.ceil(totalOrders / parseInt(limit));
@@ -1556,8 +1694,8 @@ async getOrderById(orderId) {
       Order.countDocuments(filter),
       Order.aggregate([
         { $match: filter },
-        { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } }
-      ]).then(result => result.length > 0 ? result[0].totalSum : 0),
+        { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } },
+      ]).then((result) => (result.length > 0 ? result[0].totalSum : 0)),
     ]);
 
     const totalPages = Math.ceil(totalOrders / parseInt(limit));
@@ -1596,7 +1734,7 @@ async getOrderById(orderId) {
     } = query;
 
     const filter = {};
-    
+
     // Apply search filter
     if (search) {
       filter.$or = [{ orderNumber: { $regex: search, $options: "i" } }];
@@ -1646,7 +1784,7 @@ async getOrderById(orderId) {
         filter.orderDate.$lte = endDate;
       }
     }
-    
+
     // Priority 1: If godownId is provided and not empty, use it
     if (godownId && godownId !== "") {
       filter.godown = new mongoose.Types.ObjectId(godownId);
@@ -1663,18 +1801,23 @@ async getOrderById(orderId) {
       } else if (roleName !== "Super Admin") {
         // Manager, Admin, and other roles: use godown hierarchy
         // Priority 2: Check for user's accessible godowns
-        if (currentUser.accessibleGodowns && currentUser.accessibleGodowns.length > 0) {
+        if (
+          currentUser.accessibleGodowns &&
+          currentUser.accessibleGodowns.length > 0
+        ) {
           // Convert to ObjectIds if needed
-          const accessibleIds = currentUser.accessibleGodowns.map(godown => 
-            typeof godown === 'object' && godown._id ? godown._id : godown
+          const accessibleIds = currentUser.accessibleGodowns.map((godown) =>
+            typeof godown === "object" && godown._id ? godown._id : godown
           );
           filter.godown = { $in: accessibleIds };
-        } 
+        }
         // Priority 3: Check for user's primary godown
         else if (currentUser.primaryGodown) {
-          const primaryGodownId = typeof currentUser.primaryGodown === 'object' && currentUser.primaryGodown._id 
-            ? currentUser.primaryGodown._id 
-            : currentUser.primaryGodown;
+          const primaryGodownId =
+            typeof currentUser.primaryGodown === "object" &&
+            currentUser.primaryGodown._id
+              ? currentUser.primaryGodown._id
+              : currentUser.primaryGodown;
           filter.godown = primaryGodownId;
         }
         // Priority 4: If no godowns assigned, show only their own stats as fallback
@@ -2069,6 +2212,69 @@ async getOrderById(orderId) {
     };
   }
 
+  // Helper function to calculate and record delivery time PDF changes
+  async recordDeliveryTimePdfChanges(
+    order,
+    newPaidAmount,
+    recordedBy,
+    previousBalance
+  ) {
+    try {
+      // Ensure safe numeric conversions
+      const safeNumber = (val) => (isNaN(Number(val)) ? 0 : Number(val));
+      const customerCurrentRemaining = await this.calculatePreviousBalance(
+        order.customer
+      );
+      // Current order safe numeric values
+      const totalAmount = safeNumber(order.totalAmount);
+      const paidAmount = safeNumber(newPaidAmount);
+
+      // const currentOrderRemaining = Math.max(0, totalAmount - paidAmount);
+      const netBalanceRemaining = safeNumber(customerCurrentRemaining);
+
+      // Prepare the data to record
+      const deliveryTimePdfData = {
+        orderId: order._id,
+        customerId: order.customer,
+        items: order.items || [],
+        subTotal: safeNumber(order.subtotal),
+        taxAmount: safeNumber(order.taxAmount),
+        previousBalance: safeNumber(previousBalance),
+        totalAmount: safeNumber(totalAmount) + safeNumber(previousBalance),
+        paidAmount: safeNumber(paidAmount),
+        netBalanceRemaining,
+        recordedBy,
+        recordedAt: new Date(),
+      };
+
+      // Check if a document with the same orderId already exists
+      const existingRecord = await DeliveryTimePdfChanges.findOne({
+        orderId: order._id,
+      });
+
+      if (existingRecord) {
+        await DeliveryTimePdfChanges.findOneAndUpdate(
+          { orderId: order._id },
+          deliveryTimePdfData,
+          { new: true }
+        );
+      } else {
+        await DeliveryTimePdfChanges.create(deliveryTimePdfData);
+      }
+
+      return {
+        success: true,
+        data: deliveryTimePdfData,
+      };
+    } catch (error) {
+      console.error("Error recording delivery time PDF changes:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
   // Delete order/visit
   async deleteOrder(orderId, deletedBy) {
     const order = await Order.findById(orderId);
@@ -2101,6 +2307,110 @@ async getOrderById(orderId) {
       success: true,
       message: `${resourceType} deleted permanently`,
     };
+  }
+
+// Get delivery time PDF changes by order ID
+async getDeliveryTimePdfChangesByOrderId(orderId) {
+  try {
+    // Try to find the delivery time PDF change record
+    const deliveryTimePdfChanges = await DeliveryTimePdfChanges.findOne({ orderId })
+      .populate("orderId", "orderNumber type")
+      .populate("customerId", "name email phone")
+      .populate("recordedBy", "name email");
+
+    // If found, return it
+    if (deliveryTimePdfChanges) {
+      return {
+        success: true,
+        data: deliveryTimePdfChanges,
+      };
+    }
+
+    // If not found, create a new record from the order
+    const newRecord = await this.createDeliveryTimePdfChangesFromOrder(orderId);
+    return {
+      success: true,
+      data: newRecord,
+    };
+  } catch (error) {
+    console.error("Error fetching delivery time PDF changes:", error);
+    throw error;
+  }
+}
+
+
+  // Create delivery time PDF changes entry from order data
+  async createDeliveryTimePdfChangesFromOrder(orderId) {
+    try {
+      // First check if entry already exists
+      const existingRecord = await DeliveryTimePdfChanges.findOne({ orderId });
+      if (existingRecord) {
+        return existingRecord;
+      }
+
+      // Get the order data
+      const order = await Order.findById(orderId).populate("customer");
+      const previousBalance = await this.calculatePreviousBalance(
+        order?.customer?._id,
+        orderId
+      );
+      const currentBalance = await this.calculatePreviousBalance(
+        order?.customer?._id
+      );
+      if (!order) {
+        throw new Error("Order not found");
+      }
+
+      // Ensure safe numeric conversions
+      const safeNumber = (val) => (isNaN(Number(val)) ? 0 : Number(val));
+
+      const totalAmount =
+        safeNumber(previousBalance) + safeNumber(order.totalAmount);
+      const paidAmount = safeNumber(order.paidAmount);
+      const netBalanceRemaining = currentBalance;
+
+      // Create the delivery time PDF changes entry
+      const deliveryTimePdfData = {
+        orderId: order._id,
+        customerId: order.customer._id,
+        items: order.items || [],
+        subTotal: safeNumber(order.subtotal),
+        taxAmount: safeNumber(order.taxAmount),
+        previousBalance: safeNumber(previousBalance),
+        totalAmount: totalAmount,
+        paidAmount: paidAmount,
+        netBalanceRemaining: netBalanceRemaining,
+        recordedBy: order.createdBy,
+        recordedAt: new Date(),
+      };
+
+      const newRecord = await DeliveryTimePdfChanges.create(
+        deliveryTimePdfData
+      );
+
+      return newRecord;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  // Get or create delivery time PDF changes
+  async getOrCreateDeliveryTimePdfChanges(orderId) {
+    try {
+      // First try to get existing record
+      try {
+        const result = await this.getDeliveryTimePdfChangesByOrderId(orderId);
+        return result;
+      } catch (error) {
+        // If not found, create new record
+        if (error.message === "Delivery time PDF changes not found") {
+          return await this.createDeliveryTimePdfChangesFromOrder(orderId);
+        }
+        throw error;
+      }
+    } catch (error) {
+      throw error;
+    }
   }
 }
 

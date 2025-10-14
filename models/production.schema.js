@@ -60,7 +60,7 @@ const productionSchema = new mongoose.Schema(
         itemName: {
           type: String,
           required: () => this.status === "Finished",
-          enum: ["Atta", "Chokar"],
+          enum: ["Atta", "Chokar", "Wastage"],
         },
         productQty: {
           type: Number,
