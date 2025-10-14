@@ -23,7 +23,7 @@ class CustomerService {
 
     // Build filter object
     const filter = {};
-    
+
     // Store search conditions separately to combine with godown filters later
     let searchConditions = null;
     if (search) {
@@ -66,7 +66,17 @@ class CustomerService {
           throw err;
         }
         // Normalize to start of day UTC
-        fromDate = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+        fromDate = new Date(
+          Date.UTC(
+            d.getUTCFullYear(),
+            d.getUTCMonth(),
+            d.getUTCDate(),
+            0,
+            0,
+            0,
+            0
+          )
+        );
       }
 
       if (dateTo) {
@@ -77,7 +87,17 @@ class CustomerService {
           throw err;
         }
         // Normalize to end of day UTC
-        toDate = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
+        toDate = new Date(
+          Date.UTC(
+            d.getUTCFullYear(),
+            d.getUTCMonth(),
+            d.getUTCDate(),
+            23,
+            59,
+            59,
+            999
+          )
+        );
       }
 
       // Ensure dateFrom <= dateTo
@@ -92,7 +112,9 @@ class CustomerService {
         const diffMs = toDate.getTime() - fromDate.getTime();
         const diffDays = diffMs / (1000 * 60 * 60 * 24);
         if (diffDays > 365) {
-          const err = new Error("Date range too large. Please select up to 365 days.");
+          const err = new Error(
+            "Date range too large. Please select up to 365 days."
+          );
           err.status = 400;
           throw err;
         }
@@ -111,37 +133,60 @@ class CustomerService {
 
     // Apply user-specific godown filtering based on assignedGodownId
     let godownConditions = null;
-    if (requestingUser && (requestingUser.primaryGodown || (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0))) {
+    if (
+      requestingUser &&
+      (requestingUser.primaryGodown ||
+        (requestingUser.accessibleGodowns &&
+          requestingUser.accessibleGodowns.length > 0))
+    ) {
       const allowedGodowns = [];
-      
+
       if (requestingUser.primaryGodown) {
-        allowedGodowns.push(requestingUser.primaryGodown._id || requestingUser.primaryGodown);
+        allowedGodowns.push(
+          requestingUser.primaryGodown._id || requestingUser.primaryGodown
+        );
       }
-      
-      if (requestingUser.accessibleGodowns && requestingUser.accessibleGodowns.length > 0) {
-        allowedGodowns.push(...requestingUser.accessibleGodowns.map(g => g._id || g));
+
+      if (
+        requestingUser.accessibleGodowns &&
+        requestingUser.accessibleGodowns.length > 0
+      ) {
+        allowedGodowns.push(
+          ...requestingUser.accessibleGodowns.map((g) => g._id || g)
+        );
       }
-      
+
       if (allowedGodowns.length > 0) {
-        const mongoose = require('mongoose');
-        
+        const mongoose = require("mongoose");
+
         // Also include customers who have orders from accessible godowns but no assignedGodownId
         const { Order } = require("../models");
-        const customersWithOrders = await Order.distinct('customer', {
-          godown: { $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) }
+        const customersWithOrders = await Order.distinct("customer", {
+          godown: {
+            $in: allowedGodowns.map((id) => new mongoose.Types.ObjectId(id)),
+          },
         });
-        
+
         if (customersWithOrders.length > 0) {
           // Godown conditions: customers with assignedGodownId OR customers with orders from accessible godowns
           godownConditions = [
-            { assignedGodownId: { $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) } },
-            { _id: { $in: customersWithOrders }, assignedGodownId: { $exists: false } },
-            { _id: { $in: customersWithOrders }, assignedGodownId: null }
+            {
+              assignedGodownId: {
+                $in: allowedGodowns.map(
+                  (id) => new mongoose.Types.ObjectId(id)
+                ),
+              },
+            },
+            {
+              _id: { $in: customersWithOrders },
+              assignedGodownId: { $exists: false },
+            },
+            { _id: { $in: customersWithOrders }, assignedGodownId: null },
           ];
         } else {
           // Only filter by assignedGodownId if no orders found
-          filter.assignedGodownId = { 
-            $in: allowedGodowns.map(id => new mongoose.Types.ObjectId(id)) 
+          filter.assignedGodownId = {
+            $in: allowedGodowns.map((id) => new mongoose.Types.ObjectId(id)),
           };
         }
       }
@@ -150,10 +195,7 @@ class CustomerService {
     // Combine search and godown conditions properly
     if (searchConditions && godownConditions) {
       // Both search and godown filters exist - combine them with $and
-      filter.$and = [
-        { $or: searchConditions },
-        { $or: godownConditions }
-      ];
+      filter.$and = [{ $or: searchConditions }, { $or: godownConditions }];
     } else if (searchConditions) {
       // Only search filter exists
       filter.$or = searchConditions;
@@ -179,13 +221,13 @@ class CustomerService {
     ]);
 
     // Calculate balances for all customers in the current page
-    const customerIds = customers.map(customer => customer._id);
+    const customerIds = customers.map((customer) => customer._id);
     const balances = await this.calculateMultipleCustomerBalances(customerIds);
 
     // Add balance to each customer object
-    const customersWithBalance = customers.map(customer => ({
+    const customersWithBalance = customers.map((customer) => ({
       ...customer,
-      netBalance: balances[customer._id.toString()] || 0
+      netBalance: balances[customer._id.toString()] || 0,
     }));
 
     const totalPages = Math.ceil(totalCustomers / parseInt(limit));
@@ -236,7 +278,6 @@ class CustomerService {
     if (existingCustomer) {
       throw new Error("Customer with this phone number already exists");
     }
-   
 
     // Create customer
     const customer = new Customer({
@@ -382,98 +423,77 @@ class CustomerService {
   async calculateCustomerBalance(customerId) {
     try {
       // Get customer's outstanding amount
-      const customer = await Customer.findById(customerId).lean();
+      const customer = await Customer.findById(customerId);
       if (!customer) {
-        return 0;
+        throw new Error("Customer not found");
       }
 
-      // Get unpaid order amounts (totalAmount - paidAmount for orders with payment status not 'paid')
-      const unpaidOrders = await Order.aggregate([
-        {
-          $match: {
-            customer: customerId,
-            type: 'order',
-            paymentStatus: { $ne: 'paid' }
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            totalUnpaid: {
-              $sum: { $subtract: ['$totalAmount', '$paidAmount'] }
-            }
-          }
-        }
-      ]);
+      // Build filter
+      const filter = {
+        customer: customerId,
+        type: "order",
+      };
 
-      const unpaidAmount = unpaidOrders.length > 0 ? unpaidOrders[0].totalUnpaid : 0;
+      // Get other orders for this customer
+      const otherCustomerOrders = await Order.find(filter)
+        .select("totalAmount paidAmount")
+        .lean();
 
-      // Get advance payments (transactions where customer has paid more than order amounts)
-      const advancePayments = await Transaction.aggregate([
-        {
-          $match: {
-            customer: customerId,
-            transactionForModel: 'Customer'
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            totalAdvance: { $sum: '$amountPaid' }
-          }
-        }
-      ]);
+      // Safe number conversion helper
+      const safeNumber = (val) => (isNaN(Number(val)) ? 0 : Number(val));
 
-      const advanceAmount = advancePayments.length > 0 ? advancePayments[0].totalAdvance : 0;
-
-      // Net balance = outstanding amount + unpaid orders - advance payments
-      const netBalance = (customer.outstandingAmount || 0) + unpaidAmount - advanceAmount;
-
-      return Math.round(netBalance * 100) / 100; // Round to 2 decimal places
+      // Calculate total previous balance
+      const previousBalance = otherCustomerOrders.reduce((total, ord) => {
+        const totalAmt = safeNumber(ord.totalAmount);
+        const paidAmt = safeNumber(ord.paidAmount);
+        const outstanding = Math.max(0, totalAmt - paidAmt);
+        return total + outstanding;
+      }, 0);
+      return previousBalance;
     } catch (error) {
-      console.error('Error calculating customer balance:', error);
+      console.error("Error calculating customer balance:", error);
       return 0;
     }
   }
 
- // Calculate balances for multiple customers efficiently
-async calculateMultipleCustomerBalances(customerIds) {
-  try {
-    if (!Array.isArray(customerIds) || customerIds.length === 0) {
+  // Calculate balances for multiple customers efficiently
+  async calculateMultipleCustomerBalances(customerIds) {
+    try {
+      if (!Array.isArray(customerIds) || customerIds.length === 0) {
+        return {};
+      }
+
+      // Fetch all relevant orders for these customers in one query
+      const outstandingOrders = await orderSchema
+        .find({
+          customer: { $in: customerIds },
+          type: "order", // Only consider actual orders
+          paymentStatus: { $in: ["pending", "partial", "overdue"] },
+        })
+        .select("customer totalAmount paidAmount")
+        .lean();
+
+      // Group and sum outstanding amounts per customer
+      const balances = outstandingOrders.reduce((acc, order) => {
+        const customerId = order.customer.toString();
+        const outstanding = (order.totalAmount || 0) - (order.paidAmount || 0);
+        acc[customerId] = (acc[customerId] || 0) + outstanding;
+        return acc;
+      }, {});
+
+      // Ensure every provided customerId appears, even if 0 outstanding
+      for (const id of customerIds) {
+        if (!(id.toString() in balances)) {
+          balances[id.toString()] = 0;
+        }
+      }
+
+      return balances;
+    } catch (error) {
+      console.error("Error calculating multiple customer balances:", error);
       return {};
     }
-
-    // Fetch all relevant orders for these customers in one query
-    const outstandingOrders = await orderSchema.find({
-      customer: { $in: customerIds },
-      type: 'order', // Only consider actual orders
-      paymentStatus: { $in: ['pending', 'partial', 'overdue'] }
-    })
-      .select('customer totalAmount paidAmount')
-      .lean();
-    
-    // Group and sum outstanding amounts per customer
-    const balances = outstandingOrders.reduce((acc, order) => {
-      const customerId = order.customer.toString();
-      const outstanding = (order.totalAmount || 0) - (order.paidAmount || 0);
-      acc[customerId] = (acc[customerId] || 0) + outstanding;
-      return acc;
-    }, {});
-
-    // Ensure every provided customerId appears, even if 0 outstanding
-    for (const id of customerIds) {
-      if (!(id.toString() in balances)) {
-        balances[id.toString()] = 0;
-      }
-    }
-
-    return balances;
-  } catch (error) {
-    console.error('Error calculating multiple customer balances:', error);
-    return {};
   }
-}
-
 
   // Get customer statistics
   async getCustomerStats() {
