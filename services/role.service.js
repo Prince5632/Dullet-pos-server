@@ -1,5 +1,18 @@
 const { Role, Permission, User, AuditLog } = require('../models');
 
+// Get all active roles for dropdown (simple list)
+const getAllRolesSimple = async () => {
+  const roles = await Role.find({ isActive: true })
+    .select('_id name description')
+    .sort({ name: 1 })
+    .lean();
+
+  return {
+    success: true,
+    data: { roles }
+  };
+};
+
 // Get all roles with pagination and filtering
 const getAllRoles = async (queryParams) => {
   const {
@@ -390,6 +403,7 @@ const getAvailablePermissions = async () => {
 
 module.exports = {
   getAllRoles,
+  getAllRolesSimple,
   getRoleById,
   createRole,
   updateRole,

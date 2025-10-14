@@ -78,6 +78,8 @@ class OrderService {
       visitStatus = "",
       hasImage = "",
       address = "",
+      // Role filter
+      roleId = "",
     } = query;
 
     // Build filter object
@@ -223,21 +225,211 @@ class OrderService {
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
 
+    // Build aggregation pipeline for role filtering
+    const pipeline = [
+      { $match: filter },
+      // Lookup createdBy user details
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "_id",
+          as: "createdByUser",
+          pipeline: [
+            {
+              $lookup: {
+                from: "roles",
+                localField: "role",
+                foreignField: "_id",
+                as: "role"
+              }
+            },
+            { $unwind: { path: "$role", preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                firstName: 1,
+                lastName: 1,
+                role: 1
+              }
+            }
+          ]
+        }
+      },
+      { $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true } },
+      // Lookup other related data
+      {
+        $lookup: {
+          from: "customers",
+          localField: "customer",
+          foreignField: "_id",
+          as: "customer",
+          pipeline: [
+            {
+              $project: {
+                customerId: 1,
+                businessName: 1,
+                contactPersonName: 1,
+                phone: 1
+              }
+            }
+          ]
+        }
+      },
+      { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "godowns",
+          localField: "godown",
+          foreignField: "_id",
+          as: "godown",
+          pipeline: [
+            {
+              $project: {
+                name: 1,
+                location: 1
+              }
+            }
+          ]
+        }
+      },
+      { $unwind: { path: "$godown", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "approvedBy",
+          foreignField: "_id",
+          as: "approvedBy",
+          pipeline: [
+            {
+              $project: {
+                firstName: 1,
+                lastName: 1
+              }
+            }
+          ]
+        }
+      },
+      { $unwind: { path: "$approvedBy", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "driverAssignment.driver",
+          foreignField: "_id",
+          as: "driverUser",
+          pipeline: [
+            {
+              $project: {
+                firstName: 1,
+                lastName: 1,
+                phone: 1
+              }
+            }
+          ]
+        }
+      },
+      { $unwind: { path: "$driverUser", preserveNullAndEmptyArrays: true } },
+      // Add driver info back to driverAssignment
+      {
+        $addFields: {
+          "driverAssignment.driver": "$driverUser"
+        }
+      },
+      {
+        $project: {
+          driverUser: 0
+        }
+      }
+    ];
+
+    // Add role filter if specified
+    if (roleId) {
+      pipeline.push({
+        $match: {
+          "createdByUser.role._id": new mongoose.Types.ObjectId(roleId)
+        }
+      });
+    }
+
+    // Add sorting, skip, and limit
+    pipeline.push(
+      { $sort: sort },
+      { $skip: skip },
+      { $limit: parseInt(limit) }
+    );
+
+    // Rename createdByUser back to createdBy for consistency
+    pipeline.push({
+      $addFields: {
+        createdBy: "$createdByUser"
+      }
+    });
+    pipeline.push({
+      $project: {
+        createdByUser: 0
+      }
+    });
+
     // Execute queries
     const [orders, totalOrders, totalAmountSum] = await Promise.all([
-      Order.find(filter)
-        .populate("customer", "customerId businessName contactPersonName phone")
-        .populate("godown", "name location")
-        .populate("createdBy", "firstName lastName")
-        .populate("approvedBy", "firstName lastName")
-        .populate("driverAssignment.driver", "firstName lastName phone")
-        .sort(sort)
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
-      Order.countDocuments(filter),
+      Order.aggregate(pipeline),
+      // For count, we need to build a separate pipeline without skip/limit
       Order.aggregate([
         { $match: filter },
+        {
+          $lookup: {
+            from: "users",
+            localField: "createdBy",
+            foreignField: "_id",
+            as: "createdByUser",
+            pipeline: [
+              {
+                $lookup: {
+                  from: "roles",
+                  localField: "role",
+                  foreignField: "_id",
+                  as: "role"
+                }
+              },
+              { $unwind: { path: "$role", preserveNullAndEmptyArrays: true } }
+            ]
+          }
+        },
+        { $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true } },
+        ...(roleId ? [{
+          $match: {
+            "createdByUser.role._id": new mongoose.Types.ObjectId(roleId)
+          }
+        }] : []),
+        { $count: "total" }
+      ]).then((result) => (result.length > 0 ? result[0].total : 0)),
+      // For sum, similar approach
+      Order.aggregate([
+        { $match: filter },
+        {
+          $lookup: {
+            from: "users",
+            localField: "createdBy",
+            foreignField: "_id",
+            as: "createdByUser",
+            pipeline: [
+              {
+                $lookup: {
+                  from: "roles",
+                  localField: "role",
+                  foreignField: "_id",
+                  as: "role"
+                }
+              },
+              { $unwind: { path: "$role", preserveNullAndEmptyArrays: true } }
+            ]
+          }
+        },
+        { $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true } },
+        ...(roleId ? [{
+          $match: {
+            "createdByUser.role._id": new mongoose.Types.ObjectId(roleId)
+          }
+        }] : []),
         { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } },
       ]).then((result) => (result.length > 0 ? result[0].totalSum : 0)),
     ]);
@@ -1731,6 +1923,7 @@ class OrderService {
       minAmount = "",
       maxAmount = "",
       godownId = "",
+      roleId = "",
     } = query;
 
     const filter = {};
@@ -1836,6 +2029,32 @@ class OrderService {
       1
     );
 
+    // Helper function to create aggregation pipeline with role filter
+    const createPipeline = (matchConditions) => {
+      const pipeline = [{ $match: matchConditions }];
+      
+      if (roleId) {
+        pipeline.push(
+          {
+            $lookup: {
+              from: "users",
+              localField: "createdBy",
+              foreignField: "_id",
+              as: "createdByUser",
+            },
+          },
+          {
+            $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true },
+          },
+          {
+            $match: { "createdByUser.role": new mongoose.Types.ObjectId(roleId) },
+          }
+        );
+      }
+      
+      return pipeline;
+    };
+
     const [
       totalOrders,
       totalVisits,
@@ -1847,30 +2066,53 @@ class OrderService {
       todayVisits,
       monthlyRevenue,
     ] = await Promise.all([
-      Order.countDocuments({ ...filter, type: "order" }),
-      Order.countDocuments({ ...filter, type: "visit" }),
-      Order.countDocuments({ ...filter, type: "order", status: "pending" }),
-      Order.countDocuments({ ...filter, type: "order", status: "approved" }),
-      Order.countDocuments({ ...filter, type: "order", status: "completed" }),
-      Order.countDocuments({ ...filter, type: "order", status: "rejected" }),
-      Order.countDocuments({
-        ...filter,
-        type: "order",
-        orderDate: { $gte: startOfToday },
-      }),
-      Order.countDocuments({
-        ...filter,
-        type: "visit",
-        orderDate: { $gte: startOfToday },
-      }),
+      // Use aggregation for role filtering, fallback to countDocuments if no role filter
+      roleId 
+        ? Order.aggregate([...createPipeline({ ...filter, type: "order" }), { $count: "count" }])
+            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+        : Order.countDocuments({ ...filter, type: "order" }),
+      
+      roleId 
+        ? Order.aggregate([...createPipeline({ ...filter, type: "visit" }), { $count: "count" }])
+            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+        : Order.countDocuments({ ...filter, type: "visit" }),
+      
+      roleId 
+        ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "pending" }), { $count: "count" }])
+            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+        : Order.countDocuments({ ...filter, type: "order", status: "pending" }),
+      
+      roleId 
+        ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "approved" }), { $count: "count" }])
+            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+        : Order.countDocuments({ ...filter, type: "order", status: "approved" }),
+      
+      roleId 
+        ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "completed" }), { $count: "count" }])
+            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+        : Order.countDocuments({ ...filter, type: "order", status: "completed" }),
+      
+      roleId 
+        ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "rejected" }), { $count: "count" }])
+            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+        : Order.countDocuments({ ...filter, type: "order", status: "rejected" }),
+      
+      roleId 
+        ? Order.aggregate([...createPipeline({ ...filter, type: "order", orderDate: { $gte: startOfToday } }), { $count: "count" }])
+            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+        : Order.countDocuments({ ...filter, type: "order", orderDate: { $gte: startOfToday } }),
+      
+      roleId 
+        ? Order.aggregate([...createPipeline({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }), { $count: "count" }])
+            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+        : Order.countDocuments({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }),
+      
       Order.aggregate([
-        {
-          $match: {
-            type: "order",
-            orderDate: { $gte: startOfMonth },
-            ...filter,
-          },
-        },
+        ...createPipeline({
+          type: "order",
+          orderDate: { $gte: startOfMonth },
+          ...filter,
+        }),
         { $group: { _id: null, total: { $sum: "$totalAmount" } } },
       ]).then((result) => (Array.isArray(result) && result[0]?.total) || 0),
     ]);

@@ -7,6 +7,9 @@ const router = express.Router();
 // Get all roles
 router.get('/', authenticate, authorizeAny(['roles.read', 'users.create']), roleController.getAllRoles);
 
+// Get all roles in simple format (for dropdowns)
+router.get('/simple', authenticate, authorizeAny(['roles.read', 'orders.read']), roleController.getAllRolesSimple);
+
 // Get available permissions (must be before /:id routes)
 router.get('/permissions/available', authenticate, authorize('roles.read'), roleController.getAvailablePermissions);
 
