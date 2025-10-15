@@ -129,6 +129,9 @@ const getGodowns = async (req, res) => {
         };
       }
 
+      // Note: Role filter is applied in aggregation pipelines below, not here
+      // since orders don't have a direct roleId field - they're linked through createdBy -> user -> role
+
       // Apply consistent filtering with Sales Executive Reports
       // Exclude cancelled and rejected orders/visits
       const baseOrderFilter = {
@@ -188,6 +191,12 @@ const getGodowns = async (req, res) => {
           $match: { "createdByUser.department": department },
         });
       }
+      // Add role filter only if specified
+      if (req.query.roleId) {
+        orderPipeline.push({
+          $match: { "createdByUser.role": new mongoose.Types.ObjectId(req.query.roleId) },
+        });
+      }
 
       orderPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
 
@@ -213,12 +222,29 @@ const getGodowns = async (req, res) => {
         {
           $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true },
         },
+        {
+          $lookup: {
+            from: "roles",
+            localField: "createdByUser.role", // role ObjectId from User
+            foreignField: "_id",
+            as: "userRole",
+          },
+        },
+        {
+          $unwind: { path: "$userRole", preserveNullAndEmptyArrays: true },
+        },
       ];
 
       // Add department filter only if specified
       if (department) {
         visitPipeline.push({
           $match: { "createdByUser.department": department },
+        });
+      }
+      // Add role filter only if specified
+      if (req.query.roleId) {
+        visitPipeline.push({
+          $match: { "createdByUser.role": new mongoose.Types.ObjectId(req.query.roleId) },
         });
       }
 

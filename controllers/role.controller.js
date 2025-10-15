@@ -1,5 +1,18 @@
 const roleService = require('../services/role.service');
 
+// Get all roles in simple format (for dropdowns)
+const getAllRolesSimple = async (req, res) => {
+  try {
+    const result = await roleService.getAllRolesSimple();
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 // Get all roles controller
 const getAllRoles = async (req, res) => {
   try {
@@ -220,6 +233,7 @@ const getAvailablePermissions = async (req, res) => {
 
 module.exports = {
   getAllRoles,
+  getAllRolesSimple,
   getRoleById,
   createRole,
   updateRole,
