@@ -173,7 +173,14 @@ const getGodowns = async (req, res) => {
         },
       ];
       if (req.query.onlySalesExecutive === "true") {
-        orderPipeline.push({ $match: { "userRole.name": "Sales Executive" } });
+        orderPipeline.push({
+          $match: {
+            $or: [
+              { "userRole.name": "Sales Executive" },
+              { "userRole.name": "Manager" },
+            ],
+          },
+        });
       }
       // Add department filter only if specified
       if (department) {
@@ -253,7 +260,7 @@ const getGodowns = async (req, res) => {
           { stockId: { $regex: req.query.search, $options: "i" } },
           { inventoryType: { $regex: req.query.search, $options: "i" } },
           { unit: { $regex: req.query.search, $options: "i" } },
-          { additionalNotes: { $regex: req.query.search, $options: "i" } }
+          { additionalNotes: { $regex: req.query.search, $options: "i" } },
         ];
 
         // If search is a valid number, also search in quantity field
@@ -286,23 +293,41 @@ const getGodowns = async (req, res) => {
         inventoryPipeline.push({
           $match: {
             $or: [
-              { "loggedByUser.firstName": { $regex: req.query.loggedBy, $options: "i" } },
-              { "loggedByUser.lastName": { $regex: req.query.loggedBy, $options: "i" } },
-              { 
+              {
+                "loggedByUser.firstName": {
+                  $regex: req.query.loggedBy,
+                  $options: "i",
+                },
+              },
+              {
+                "loggedByUser.lastName": {
+                  $regex: req.query.loggedBy,
+                  $options: "i",
+                },
+              },
+              {
                 $expr: {
                   $regexMatch: {
-                    input: { $concat: ["$loggedByUser.firstName", " ", "$loggedByUser.lastName"] },
+                    input: {
+                      $concat: [
+                        "$loggedByUser.firstName",
+                        " ",
+                        "$loggedByUser.lastName",
+                      ],
+                    },
                     regex: req.query.loggedBy,
-                    options: "i"
-                  }
-                }
-              }
-            ]
-          }
+                    options: "i",
+                  },
+                },
+              },
+            ],
+          },
         });
       }
 
-      inventoryPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
+      inventoryPipeline.push({
+        $group: { _id: "$godown", count: { $sum: 1 } },
+      });
 
       // Aggregate inventory counts with filters
       const inventoryCounts = await Inventory.aggregate(inventoryPipeline);
