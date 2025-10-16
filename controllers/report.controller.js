@@ -16,7 +16,7 @@ exports.getSalesExecutiveReports = async (req, res) => {
       sortOrder = "desc",
       department,
       godownId,
-
+      userActivityFilter,
       type,
     } = req.query;
     let roleIds = req.query['roleIds[]'] || [];
@@ -53,6 +53,9 @@ exports.getSalesExecutiveReports = async (req, res) => {
     }
     if (type) {
       filters.type = type;
+    }
+    if (userActivityFilter && userActivityFilter !== "all") {
+      filters.userActivityFilter = userActivityFilter;
     }
 
     const report = await reportService.getSalesExecutiveReports(

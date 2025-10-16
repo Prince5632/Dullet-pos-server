@@ -20,8 +20,8 @@ exports.getSalesExecutiveReports = async (
       godownId,
       roleIds = [],
       type,
+      userActivityFilter,
     } = filters;
-    console.log(roleIds,"roleIds")
     // Match base user filters
     const userMatch = {};
     if (userId) userMatch._id = new mongoose.Types.ObjectId(userId);
@@ -260,8 +260,58 @@ exports.getSalesExecutiveReports = async (
               2,
             ],
           },
+          lastOrderDate: {
+            $cond: [
+              { $gt: [{ $size: "$orders" }, 0] },
+              { $max: "$orders.orderDate" },
+              null,
+            ],
+          },
+          daysSinceLastOrder: {
+            $cond: [
+              { $gt: [{ $size: "$orders" }, 0] },
+              {
+                $round: [
+                  {
+                    $divide: [
+                      { $subtract: [new Date(), { $max: "$orders.orderDate" }] },
+                      1000 * 60 * 60 * 24,
+                    ],
+                  },
+                  0,
+                ],
+              },
+              null,
+            ],
+          },
+          daysSinceUserCreation: {
+            $round: [
+              {
+                $divide: [
+                  { $subtract: [new Date(), "$createdAt"] },
+                  1000 * 60 * 60 * 24,
+                ],
+              },
+              0,
+            ],
+          },
         },
       },
+
+      // ✅ Filter by user activity if specified
+      ...(userActivityFilter
+        ? [
+            {
+              $match: {
+                ...(userActivityFilter === "active"
+                  ? { totalOrders: { $gt: 0 } }
+                  : userActivityFilter === "inactive"
+                  ? { totalOrders: { $eq: 0 } }
+                  : {}),
+              },
+            },
+          ]
+        : []),
 
       {
         $project: {
@@ -283,6 +333,9 @@ exports.getSalesExecutiveReports = async (
           completedOrders: 1,
           uniqueCustomersCount: 1,
           conversionRate: 1,
+          lastOrderDate: 1,
+          daysSinceLastOrder: 1,
+          daysSinceUserCreation: 1,
         },
       },
 
