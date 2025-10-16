@@ -16,10 +16,20 @@ const getGodowns = async (req, res) => {
     // Pass user ID from authenticated token to service for godown filtering
     const userId = req.user ? req.user._id : null; // [memory:1][memory:2]
     const result = await godownService.getGodowns(req.query, userId); // [memory:1][memory:2]
+    let { roleIds } = req.query;
+
+    let extractedRoleIds = [];
+
+    // Handle different possible formats
+    if (Array.isArray(roleIds)) {
+      extractedRoleIds = roleIds;
+    } else if (typeof roleIds === "string" && roleIds.trim() !== "") {
+      // Handle comma-separated or single string
+      extractedRoleIds = roleIds.split(",").map((id) => id.trim());
+    }
 
     const godowns = result?.data?.godowns || []; // [memory:1]
     let godownIds = godowns.map((g) => g._id); // [memory:1]
-
     // Scope counts to the requesting user's assigned godowns when available
     // If the auth token includes user details with primaryGodown/accesssibleGodowns, use those
     const assignedIds = [];
@@ -178,10 +188,20 @@ const getGodowns = async (req, res) => {
       if (req.query.onlySalesExecutive === "true") {
         orderPipeline.push({
           $match: {
-            $or: [
-              { "userRole.name": "Sales Executive" },
-              { "userRole.name": "Manager" },
-            ],
+            ...(extractedRoleIds.length > 0
+              ? {
+                  "userRole._id": {
+                    $in: extractedRoleIds?.map(
+                      (id) => new mongoose.Types.ObjectId(id)
+                    ),
+                  },
+                }
+              : {
+                  $or: [
+                    { "userRole.name": "Sales Executive" },
+                    { "userRole.name": "Manager" },
+                  ],
+                }),
           },
         });
       }
@@ -194,7 +214,9 @@ const getGodowns = async (req, res) => {
       // Add role filter only if specified
       if (req.query.roleId) {
         orderPipeline.push({
-          $match: { "createdByUser.role": new mongoose.Types.ObjectId(req.query.roleId) },
+          $match: {
+            "createdByUser.role": new mongoose.Types.ObjectId(req.query.roleId),
+          },
         });
       }
 
@@ -234,7 +256,26 @@ const getGodowns = async (req, res) => {
           $unwind: { path: "$userRole", preserveNullAndEmptyArrays: true },
         },
       ];
-
+      if (req.query.onlySalesExecutive === "true") {
+        visitPipeline.push({
+          $match: {
+            ...(extractedRoleIds.length > 0
+              ? {
+                  "userRole._id": {
+                    $in: extractedRoleIds?.map(
+                      (id) => new mongoose.Types.ObjectId(id)
+                    ),
+                  },
+                }
+              : {
+                  $or: [
+                    { "userRole.name": "Sales Executive" },
+                    { "userRole.name": "Manager" },
+                  ],
+                }),
+          },
+        });
+      }
       // Add department filter only if specified
       if (department) {
         visitPipeline.push({
@@ -244,7 +285,9 @@ const getGodowns = async (req, res) => {
       // Add role filter only if specified
       if (req.query.roleId) {
         visitPipeline.push({
-          $match: { "createdByUser.role": new mongoose.Types.ObjectId(req.query.roleId) },
+          $match: {
+            "createdByUser.role": new mongoose.Types.ObjectId(req.query.roleId),
+          },
         });
       }
 

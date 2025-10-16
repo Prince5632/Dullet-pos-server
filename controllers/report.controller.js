@@ -1,3 +1,4 @@
+const { default: mongoose } = require("mongoose");
 const reportService = require("../services/report.service");
 const { sendSuccess, sendError } = require("../utils/response");
 
@@ -15,9 +16,13 @@ exports.getSalesExecutiveReports = async (req, res) => {
       sortOrder = "desc",
       department,
       godownId,
+
       type,
     } = req.query;
-
+    let roleIds = req.query['roleIds[]'] || [];
+    roleIds = Array.isArray(roleIds) ? roleIds : [roleIds];
+    roleIds = roleIds.map((id) => new mongoose.Types.ObjectId(id));
+    
     const filters = {};
     if (startDate || endDate) {
       filters.dateRange = {};
@@ -35,6 +40,9 @@ exports.getSalesExecutiveReports = async (req, res) => {
     }
     if (userId) {
       filters.userId = userId;
+    }
+    if (roleIds?.length > 0) {
+      filters.roleIds = roleIds;
     }
     // Add department filter only if specified
     if (department) {
@@ -129,7 +137,7 @@ exports.getCustomerReports = async (req, res) => {
     const filters = {};
     if (startDate || endDate) {
       filters.dateRange = {};
-       if (startDate) {
+      if (startDate) {
         const dateFrom = new Date(startDate);
         dateFrom.setHours(0, 0, 0, 0);
         filters.dateRange.startDate = dateFrom;

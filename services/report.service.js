@@ -13,8 +13,15 @@ exports.getSalesExecutiveReports = async (
   requestingUser = null
 ) => {
   try {
-    const { dateRange, userId, department, godownId, type } = filters;
-
+    const {
+      dateRange,
+      userId,
+      department,
+      godownId,
+      roleIds = [],
+      type,
+    } = filters;
+    console.log(roleIds,"roleIds")
     // Match base user filters
     const userMatch = {};
     if (userId) userMatch._id = new mongoose.Types.ObjectId(userId);
@@ -83,10 +90,18 @@ exports.getSalesExecutiveReports = async (
       },
       {
         $match: {
-          $or: [
-            { "roleData.name": "Sales Executive" },
-            { "roleData.name": "Manager" },
-          ],
+          ...(roleIds.length > 0
+            ? {
+                role: {
+                  $in: roleIds.map((id) => new mongoose.Types.ObjectId(id)),
+                },
+              }
+            : {
+                $or: [
+                  { "roleData.name": "Sales Executive" },
+                  { "roleData.name": "Manager" },
+                ],
+              }),
         },
       },
 

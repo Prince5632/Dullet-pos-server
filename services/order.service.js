@@ -78,10 +78,11 @@ class OrderService {
       visitStatus = "",
       hasImage = "",
       address = "",
+      orderStatus = "",
       // Role filter
       roleId = "",
     } = query;
-
+    console.log(query)
     // Build filter object
     const filter = {};
 
@@ -89,7 +90,10 @@ class OrderService {
       filter.$or = [{ orderNumber: { $regex: search, $options: "i" } }];
     }
 
-    if (status) {
+    if (paymentStatus) {
+      filter.paymentStatus = paymentStatus;
+    }
+    if(status) {
       filter.status = status;
     }
 
