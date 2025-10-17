@@ -135,6 +135,7 @@ exports.getCustomerReports = async (req, res) => {
       sortBy = "totalSpent",
       sortOrder = "desc",
       inactiveDays, // Dynamic parameter for inactive customers
+      godownId, // Add godown filtering support
     } = req.query;
 
     const filters = {};
@@ -156,6 +157,9 @@ exports.getCustomerReports = async (req, res) => {
     }
     if (inactiveDays) {
       filters.inactiveDays = parseInt(inactiveDays);
+    }
+    if (godownId) {
+      filters.godownId = godownId;
     }
 
     const report = await reportService.getCustomerReports(
@@ -277,3 +281,5 @@ exports.getCustomerPurchaseDetail = async (req, res) => {
     return sendError(res, error.message, 500);
   }
 };
+
+

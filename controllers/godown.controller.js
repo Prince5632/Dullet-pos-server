@@ -1,5 +1,5 @@
 const godownService = require("../services/godown.service");
-const { Order, Inventory } = require("../models");
+const { Order, Inventory, Customer } = require("../models");
 const mongoose = require("mongoose");
 
 const createGodown = async (req, res) => {
@@ -53,6 +53,7 @@ const getGodowns = async (req, res) => {
     let orderCountsMap = {};
     let visitCountsMap = {}; // [memory:1][memory:2]
     let inventoryCountsMap = {};
+    let customerCountsMap = {};
 
     if (godownIds.length > 0) {
       // Build filter for counting based on query parameters
@@ -405,18 +406,118 @@ const getGodowns = async (req, res) => {
         acc[c._id.toString()] = c.count;
         return acc;
       }, {});
+
+      // Build customer filter for counting based on assignedGodownId
+      const customerCountFilter = { 
+        assignedGodownId: { $in: godownIds },
+        isActive: true // Only count active customers
+      };
+
+      // Apply search filter for customers if provided
+      if (req.query.search) {
+        customerCountFilter.$or = [
+          { businessName: { $regex: req.query.search, $options: "i" } },
+          { customerId: { $regex: req.query.search, $options: "i" } },
+          { contactPersonName: { $regex: req.query.search, $options: "i" } },
+          { phone: { $regex: req.query.search, $options: "i" } },
+        ];
+      }
+
+      // Apply customer type filter if provided
+      if (req.query.customerType) {
+        customerCountFilter.customerType = req.query.customerType;
+      }
+
+      // Apply date range filter for customer creation if provided
+      if (req.query.dateFrom || req.query.dateTo) {
+        customerCountFilter.createdAt = {};
+        if (req.query.dateFrom) {
+          customerCountFilter.createdAt.$gte = new Date(req.query.dateFrom);
+        }
+        if (req.query.dateTo) {
+          // Set end date to end of day (23:59:59.999) to include all customers created on that date
+          const endDate = new Date(req.query.dateTo);
+          endDate.setHours(23, 59, 59, 999);
+          customerCountFilter.createdAt.$lte = endDate;
+        }
+      }
+
+      // Aggregate customer counts by assignedGodownId
+      const customerCounts = await Customer.aggregate([
+        { $match: customerCountFilter },
+        { $group: { _id: "$assignedGodownId", count: { $sum: 1 } } }
+      ]);
+
+      customerCountsMap = customerCounts.reduce((acc, c) => {
+        acc[c._id.toString()] = c.count;
+        return acc;
+      }, {});
     }
+
+    // Calculate total customer count
+    // 1. Sum of customerCount from all godowns
+    const assignedCustomersCount = Object.values(customerCountsMap).reduce((sum, count) => sum + count, 0);
+    
+    // 2. Count customers not assigned to any godown
+    const unassignedCustomerFilter = {
+      $or: [
+        { assignedGodownId: { $exists: false } },
+        { assignedGodownId: null }
+      ],
+      isActive: true
+    };
+
+    // Apply additional filters for unassigned customers if they exist in the request
+    if (req.query.search) {
+      unassignedCustomerFilter.$and = [
+        {
+          $or: [
+            { name: { $regex: req.query.search, $options: "i" } },
+            { email: { $regex: req.query.search, $options: "i" } },
+            { phone: { $regex: req.query.search, $options: "i" } }
+          ]
+        }
+      ];
+    }
+
+    if (req.query.customerType) {
+      unassignedCustomerFilter.customerType = req.query.customerType;
+    }
+
+    if (req.query.dateFrom || req.query.dateTo) {
+      unassignedCustomerFilter.createdAt = {};
+      if (req.query.dateFrom) {
+        unassignedCustomerFilter.createdAt.$gte = new Date(req.query.dateFrom);
+      }
+      if (req.query.dateTo) {
+        const endDate = new Date(req.query.dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        unassignedCustomerFilter.createdAt.$lte = endDate;
+      }
+    }
+
+    const unassignedCustomersCount = await Customer.countDocuments(unassignedCustomerFilter);
+    
+    // 3. Combine both counts
+    const allCustomerCount = assignedCustomersCount + unassignedCustomersCount;
 
     const godownsWithCounts = godowns.map((g) => ({
       ...g,
       orderCount: orderCountsMap[g._id.toString()] || 0,
       visitCount: visitCountsMap[g._id.toString()] || 0,
       inventoryCount: inventoryCountsMap[g._id.toString()] || 0,
+      customerCount: customerCountsMap[g._id.toString()] || 0,
     })); // [memory:1]
 
     res
       .status(200)
-      .json({ success: true, data: { godowns: godownsWithCounts } }); // [memory:1]
+      .json({ 
+        success: true, 
+        data: { 
+          godowns: godownsWithCounts,
+          allCustomerCount: allCustomerCount
+        } 
+      }); // [memory:1]
   } catch (error) {
     res.status(500).json({ success: false, message: error.message }); // [memory:10]
   }

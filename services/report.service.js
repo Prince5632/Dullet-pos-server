@@ -260,14 +260,14 @@ exports.getSalesExecutiveReports = async (
               2,
             ],
           },
-          lastOrderDate: {
+          lastActivityDate: {
             $cond: [
               { $gt: [{ $size: "$orders" }, 0] },
               { $max: "$orders.orderDate" },
               null,
             ],
           },
-          daysSinceLastOrder: {
+          daysSinceLastActivity: {
             $cond: [
               { $gt: [{ $size: "$orders" }, 0] },
               {
@@ -333,8 +333,8 @@ exports.getSalesExecutiveReports = async (
           completedOrders: 1,
           uniqueCustomersCount: 1,
           conversionRate: 1,
-          lastOrderDate: 1,
-          daysSinceLastOrder: 1,
+          lastActivityDate: 1,
+          daysSinceLastActivity: 1,
           daysSinceUserCreation: 1,
         },
       },
@@ -491,7 +491,7 @@ exports.getCustomerReports = async (
   requestingUser = null
 ) => {
   try {
-    const { dateRange, customerId, inactiveDays } = filters;
+    const { dateRange, customerId, inactiveDays, godownId } = filters;
 
     // Build match criteria
     const matchCriteria = {
@@ -513,13 +513,16 @@ exports.getCustomerReports = async (
       matchCriteria.customer = new mongoose.Types.ObjectId(customerId);
     }
 
-    // Apply user-specific godown filtering
-    if (
+    // Apply godown filtering
+    if (godownId) {
+      matchCriteria.godown = new mongoose.Types.ObjectId(godownId);
+    } else if (
       requestingUser &&
       (requestingUser.primaryGodown ||
         (requestingUser.accessibleGodowns &&
           requestingUser.accessibleGodowns.length > 0))
     ) {
+      // Apply user-specific godown filtering only if no specific godown is requested
       const allowedGodowns = [];
 
       if (requestingUser.primaryGodown) {
@@ -721,6 +724,7 @@ exports.getInactiveCustomers = async (days = 7) => {
     throw new Error(`Failed to get inactive customers: ${error.message}`);
   }
 };
+
 
 /**
  * Get Executive Performance Detail
