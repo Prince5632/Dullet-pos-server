@@ -553,11 +553,50 @@ const getGodowns = async (req, res) => {
           // For all customers: count ALL active customers (assigned or have ordered from godown)
           // This matches the CustomersPage which shows all customers regardless of order history
           
-          // Get customers assigned to these godowns
+          // Build customer filter based on query parameters (matching customer API)
+          const customerFilter = {};
+          
+          // Apply customer filters from query
+          if (req.query.customerType) {
+            customerFilter.customerType = req.query.customerType;
+          }
+          
+          if (req.query.customerIsActive !== undefined && req.query.customerIsActive !== '') {
+            customerFilter.isActive = req.query.customerIsActive === 'true';
+          } else {
+            customerFilter.isActive = true; // Default to active customers
+          }
+          
+          if (req.query.customerState) {
+            customerFilter['address.state'] = req.query.customerState;
+          }
+          
+          if (req.query.customerCity) {
+            customerFilter['address.city'] = { $regex: req.query.customerCity, $options: 'i' };
+          }
+          
+          // Apply customer date range filter (for customer createdAt)
+          if (req.query.customerDateFrom || req.query.customerDateTo) {
+            customerFilter.createdAt = {};
+            if (req.query.customerDateFrom) {
+              const d = new Date(req.query.customerDateFrom);
+              customerFilter.createdAt.$gte = new Date(
+                Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0)
+              );
+            }
+            if (req.query.customerDateTo) {
+              const d = new Date(req.query.customerDateTo);
+              customerFilter.createdAt.$lte = new Date(
+                Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999)
+              );
+            }
+          }
+          
+          // Get customers assigned to these godowns with filters applied
           const assignedCustomers = await Customer.find({ 
-            isActive: true,
+            ...customerFilter,
             assignedGodownId: { $in: godownIds }
-          }).select('_id assignedGodownId');
+          }).select('_id assignedGodownId businessName contactPersonName phone customerId location address');
           
           // Get all customers who have ever ordered from these godowns
           const customersWithOrders = await Order.distinct('customer', {
@@ -566,19 +605,41 @@ const getGodowns = async (req, res) => {
             status: { $nin: ["cancelled", "rejected"] }
           });
           
-          // Get customers without assignedGodownId (or null) who have orders
+          // Get customers without assignedGodownId (or null) who have orders, with filters applied
           const customersWithoutAssignment = await Customer.find({
-            isActive: true,
+            ...customerFilter,
             _id: { $in: customersWithOrders },
             $or: [
               { assignedGodownId: { $exists: false } },
               { assignedGodownId: null }
             ]
-          }).select('_id');
+          }).select('_id businessName contactPersonName phone customerId location address');
+          
+          // Apply customer search filter if provided
+          let filteredAssignedCustomers = assignedCustomers;
+          let filteredCustomersWithoutAssignment = customersWithoutAssignment;
+          
+          if (req.query.customerSearch) {
+            const searchRegex = new RegExp(req.query.customerSearch, 'i');
+            filteredAssignedCustomers = assignedCustomers.filter(c => 
+              searchRegex.test(c.businessName) ||
+              searchRegex.test(c.contactPersonName) ||
+              searchRegex.test(c.phone) ||
+              searchRegex.test(c.customerId) ||
+              searchRegex.test(c.location)
+            );
+            filteredCustomersWithoutAssignment = customersWithoutAssignment.filter(c => 
+              searchRegex.test(c.businessName) ||
+              searchRegex.test(c.contactPersonName) ||
+              searchRegex.test(c.phone) ||
+              searchRegex.test(c.customerId) ||
+              searchRegex.test(c.location)
+            );
+          }
           
           // Create maps for godown assignments
           const godownAssignmentMap = new Map();
-          assignedCustomers.forEach(c => {
+          filteredAssignedCustomers.forEach(c => {
             const godownId = c.assignedGodownId.toString();
             if (!godownAssignmentMap.has(godownId)) {
               godownAssignmentMap.set(godownId, new Set());
@@ -587,7 +648,7 @@ const getGodowns = async (req, res) => {
           });
           
           // Get godown for each customer with orders but no assignedGodownId
-          const customersWithoutAssignmentIds = customersWithoutAssignment.map(c => c._id);
+          const customersWithoutAssignmentIds = filteredCustomersWithoutAssignment.map(c => c._id);
           const customerGodownOrders = await Order.aggregate([
             {
               $match: {
@@ -714,8 +775,57 @@ const getGodowns = async (req, res) => {
 
         allCustomerCount = allCustomerCountResult.length > 0 ? allCustomerCountResult[0].totalCustomers : 0;
       } else {
-        // For all customers: count ALL active customers (matching CustomersPage)
-        allCustomerCount = await Customer.countDocuments({ isActive: true });
+        // For all customers: count ALL active customers (matching CustomersPage) with filters applied
+        const totalCustomerFilter = {};
+        
+        // Apply customer filters from query
+        if (req.query.customerType) {
+          totalCustomerFilter.customerType = req.query.customerType;
+        }
+        
+        if (req.query.customerIsActive !== undefined && req.query.customerIsActive !== '') {
+          totalCustomerFilter.isActive = req.query.customerIsActive === 'true';
+        } else {
+          totalCustomerFilter.isActive = true; // Default to active customers
+        }
+        
+        if (req.query.customerState) {
+          totalCustomerFilter['address.state'] = req.query.customerState;
+        }
+        
+        if (req.query.customerCity) {
+          totalCustomerFilter['address.city'] = { $regex: req.query.customerCity, $options: 'i' };
+        }
+        
+        // Apply customer date range filter (for customer createdAt)
+        if (req.query.customerDateFrom || req.query.customerDateTo) {
+          totalCustomerFilter.createdAt = {};
+          if (req.query.customerDateFrom) {
+            const d = new Date(req.query.customerDateFrom);
+            totalCustomerFilter.createdAt.$gte = new Date(
+              Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0)
+            );
+          }
+          if (req.query.customerDateTo) {
+            const d = new Date(req.query.customerDateTo);
+            totalCustomerFilter.createdAt.$lte = new Date(
+              Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999)
+            );
+          }
+        }
+        
+        // Apply search filter if provided
+        if (req.query.customerSearch) {
+          totalCustomerFilter.$or = [
+            { businessName: { $regex: req.query.customerSearch, $options: 'i' } },
+            { contactPersonName: { $regex: req.query.customerSearch, $options: 'i' } },
+            { phone: { $regex: req.query.customerSearch, $options: 'i' } },
+            { customerId: { $regex: req.query.customerSearch, $options: 'i' } },
+            { location: { $regex: req.query.customerSearch, $options: 'i' } }
+          ];
+        }
+        
+        allCustomerCount = await Customer.countDocuments(totalCustomerFilter);
       }
     }
 
