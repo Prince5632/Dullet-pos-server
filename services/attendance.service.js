@@ -1,4 +1,5 @@
 const { Attendance, User, Godown } = require('../models');
+const { uploadBase64ToS3 } = require('../utils/s3Upload');
 const mongoose = require('mongoose');
 
 // Helper to safely get an id string from either a populated document or ObjectId
@@ -202,11 +203,23 @@ class AttendanceService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    // Upload check-in image to S3
+    let checkInImageUrl = checkInImage;
+    if (checkInImage && checkInImage.startsWith('data:')) {
+      const s3Result = await uploadBase64ToS3(
+        checkInImage,
+        `checkin-${userId}-${Date.now()}.jpg`,
+        'image/jpeg',
+        'attendance/checkin'
+      );
+      checkInImageUrl = s3Result.fileUrl;
+    }
+
     const newAttendance = new Attendance({
       user: userId,
       date: today,
       checkInTime: new Date(),
-      checkInImage,
+      checkInImage: checkInImageUrl,
       checkInLocation: location,
       godown: user.primaryGodown?._id || null,
       notes,
@@ -249,8 +262,20 @@ class AttendanceService {
       throw new Error('Access denied: Cannot update this attendance record');
     }
 
+    // Upload check-out image to S3
+    let checkOutImageUrl = checkOutImage;
+    if (checkOutImage && checkOutImage.startsWith('data:')) {
+      const s3Result = await uploadBase64ToS3(
+        checkOutImage,
+        `checkout-${attendance.user}-${Date.now()}.jpg`,
+        'image/jpeg',
+        'attendance/checkout'
+      );
+      checkOutImageUrl = s3Result.fileUrl;
+    }
+
     attendance.checkOutTime = new Date();
-    attendance.checkOutImage = checkOutImage;
+    attendance.checkOutImage = checkOutImageUrl;
     attendance.checkOutLocation = location;
     attendance.updatedBy = updatedByUser._id;
     

@@ -1,4 +1,30 @@
 const orderService = require('../services/order.service');
+const { uploadToS3, uploadBase64ToS3 } = require('../utils/s3Upload');
+
+const uploadOrderImage = async ({ file, base64Input, customerId, folder = 'orders/captured', orderType = 'order' }) => {
+  if (!file && !base64Input) {
+    return null;
+  }
+
+  if (file) {
+    const fileName = file.originalname || `${orderType}-${customerId || 'customer'}-${Date.now()}`;
+    const mimeType = file.mimetype || 'image/jpeg';
+    const result = await uploadToS3(file.buffer, fileName, mimeType, folder);
+    return result.fileUrl;
+  }
+
+  const base64String = base64Input || '';
+  const dataPrefixMatch = base64String.match(/^data:(.*?);base64,/);
+  const mimeType = dataPrefixMatch ? dataPrefixMatch[1] : 'image/jpeg';
+  const normalizedBase64 = base64String.startsWith('data:')
+    ? base64String
+    : `data:${mimeType};base64,${base64String}`;
+  const extension = mimeType.split('/')[1] || 'jpg';
+  const fileName = `${orderType}-${customerId || 'customer'}-${Date.now()}.${extension}`;
+
+  const result = await uploadBase64ToS3(normalizedBase64, fileName, mimeType, folder);
+  return result.fileUrl;
+};
 
 const buildErrorResponse = (res, error, defaultStatus = 500) => {
   const statusCode =
@@ -53,10 +79,17 @@ const getOrderById = async (req, res) => {
 // Create order controller
 const createOrder = async (req, res) => {
   try {
+    const capturedImageUrl = await uploadOrderImage({
+      file: req.file,
+      base64Input: req.body.capturedImage,
+      customerId: req.body.customer,
+      orderType: 'order'
+    });
+
     const orderData = {
       ...req.body,
       type: 'order',
-      capturedImage: req.file ? req.file.buffer.toString('base64') : req.body.capturedImage,
+      capturedImage: capturedImageUrl,
       captureLocation: req.body.captureLocation ? JSON.parse(req.body.captureLocation) : null
     };
     
@@ -396,9 +429,16 @@ const getQuickProducts = async (req, res) => {
 // Quick-order: create order from quick payload
 const createQuickOrder = async (req, res) => {
   try {
+    const capturedImageUrl = await uploadOrderImage({
+      file: req.file,
+      base64Input: req.body.capturedImage,
+      customerId: req.body.customer,
+      orderType: 'quick-order'
+    });
+
     const quickData = {
       ...req.body,
-      capturedImage: req.file ? req.file.buffer.toString('base64') : req.body.capturedImage,
+      capturedImage: capturedImageUrl,
       captureLocation: req.body.captureLocation ? JSON.parse(req.body.captureLocation) : null
     };
     
@@ -418,10 +458,17 @@ const createQuickOrder = async (req, res) => {
 // Create visit controller
 const createVisit = async (req, res) => {
   try {
+    const capturedImageUrl = await uploadOrderImage({
+      file: req.file,
+      base64Input: req.body.capturedImage,
+      customerId: req.body.customer,
+      orderType: 'visit'
+    });
+
     const visitData = {
       ...req.body,
       type: 'visit',
-      capturedImage: req.file ? req.file.buffer.toString('base64') : req.body.capturedImage,
+      capturedImage: capturedImageUrl,
       captureLocation: req.body.captureLocation ? JSON.parse(req.body.captureLocation) : null
     };
     

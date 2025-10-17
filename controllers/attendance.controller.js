@@ -1,4 +1,30 @@
 const attendanceService = require('../services/attendance.service');
+const { uploadToS3, uploadBase64ToS3 } = require('../utils/s3Upload');
+
+const uploadAttendanceImage = async ({ file, base64Input, folder, userId, type }) => {
+  if (!file && !base64Input) {
+    return null;
+  }
+
+  if (file) {
+    const fileName = file.originalname || `${type}-${userId || 'user'}-${Date.now()}`;
+    const mimeType = file.mimetype || 'image/jpeg';
+    const result = await uploadToS3(file.buffer, fileName, mimeType, folder);
+    return result.fileUrl;
+  }
+
+  const base64String = base64Input || '';
+  const dataPrefixMatch = base64String.match(/^data:(.*?);base64,/);
+  const mimeType = dataPrefixMatch ? dataPrefixMatch[1] : 'image/jpeg';
+  const normalizedBase64 = base64String.startsWith('data:')
+    ? base64String
+    : `data:${mimeType};base64,${base64String}`;
+  const extension = mimeType.split('/')[1] || 'jpg';
+  const fileName = `${type}-${userId || 'user'}-${Date.now()}.${extension}`;
+
+  const result = await uploadBase64ToS3(normalizedBase64, fileName, mimeType, folder);
+  return result.fileUrl;
+};
 
 // Get all attendance records
 const getAllAttendance = async (req, res) => {
@@ -31,9 +57,18 @@ const getAttendanceById = async (req, res) => {
 // Mark attendance (check-in)
 const markAttendance = async (req, res) => {
   try {
+    const targetUserId = req.body.userId || req.user._id;
+    const checkInImageUrl = await uploadAttendanceImage({
+      file: req.file,
+      base64Input: req.body.checkInImage,
+      folder: 'attendance/checkin',
+      userId: targetUserId,
+      type: 'checkin'
+    });
+
     const attendanceData = {
-      userId: req.body.userId || req.user._id, // Default to current user
-      checkInImage: req.file ? req.file.buffer.toString('base64') : req.body.checkInImage,
+      userId: targetUserId,
+      checkInImage: checkInImageUrl,
       location: req.body.location ? JSON.parse(req.body.location) : null,
       notes: req.body.notes || '',
       isAutoMarked: req.body.isAutoMarked === 'true',
@@ -57,8 +92,16 @@ const markAttendance = async (req, res) => {
 // Mark check-out
 const markCheckOut = async (req, res) => {
   try {
+    const checkOutImageUrl = await uploadAttendanceImage({
+      file: req.file,
+      base64Input: req.body.checkOutImage,
+      folder: 'attendance/checkout',
+      userId: req.user?._id,
+      type: 'checkout'
+    });
+
     const checkOutData = {
-      checkOutImage: req.file ? req.file.buffer.toString('base64') : req.body.checkOutImage,
+      checkOutImage: checkOutImageUrl,
       location: req.body.location ? JSON.parse(req.body.location) : null
     };
 
@@ -149,8 +192,16 @@ const markTodaysCheckOut = async (req, res) => {
       });
     }
 
+    const checkOutImageUrl = await uploadAttendanceImage({
+      file: req.file,
+      base64Input: req.body.checkOutImage,
+      folder: 'attendance/checkout',
+      userId,
+      type: 'checkout'
+    });
+
     const checkOutData = {
-      checkOutImage: req.file ? req.file.buffer.toString('base64') : req.body.checkOutImage,
+      checkOutImage: checkOutImageUrl,
       location: req.body.location ? JSON.parse(req.body.location) : null
     };
 

@@ -1,5 +1,6 @@
 const { User, UserSession, AuditLog, Attendance } = require("../models");
 const { generateToken } = require("../middlewares/auth.middleware");
+const { uploadBase64ToS3 } = require("../utils/s3Upload");
 const crypto = require("crypto");
 
 // User login (supports identifier: email | username | phone)
@@ -71,6 +72,18 @@ const login = async (loginData) => {
       await user.resetLoginAttempts();
     }
 
+    // Upload face image to S3 if provided
+    let faceImageUrl = faceImage;
+    if (faceImage && faceImage.startsWith('data:')) {
+      const s3Result = await uploadBase64ToS3(
+        faceImage,
+        `login-${user._id}-${Date.now()}.jpg`,
+        'image/jpeg',
+        'auth/face-images'
+      );
+      faceImageUrl = s3Result.fileUrl;
+    }
+
     // Generate session token
     const sessionToken = generateToken({
       userId: user._id,
@@ -84,7 +97,7 @@ const login = async (loginData) => {
       sessionToken,
       ipAddress: ipAddress || "Unknown",
       userAgent: userAgent || "Unknown",
-      faceImage: faceImage || null,
+      faceImage: faceImageUrl || null,
       loginTime: new Date(),
       lastActivity: new Date(),
       isActive: true,
@@ -112,7 +125,7 @@ const login = async (loginData) => {
 
     // Auto-mark attendance on first login of the day if face image is provided
     let attendanceMarked = false;
-    if (faceImage) {
+    if (faceImageUrl) {
       try {
         const hasAttendanceToday = await Attendance.hasAttendanceToday(
           user._id
@@ -126,7 +139,7 @@ const login = async (loginData) => {
             user: user._id,
             date: today,
             checkInTime: new Date(),
-            checkInImage: faceImage,
+            checkInImage: faceImageUrl, // Use S3 URL
             godown: user.primaryGodown?._id || null,
             isAutoMarked: true,
             markedBy: user._id,

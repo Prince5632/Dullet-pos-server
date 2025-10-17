@@ -1,4 +1,5 @@
 const authService = require('../services/auth.service');
+const { uploadToS3 } = require('../utils/s3Upload');
 
 // Login controller
 const login = async (req, res) => {
@@ -12,13 +13,28 @@ const login = async (req, res) => {
       });
     }
 
+    let faceImage = null;
+    if (req.file) {
+      const fileName = req.file.originalname || `login-${identifier || email || 'user'}-${Date.now()}`;
+      const mimeType = req.file.mimetype || 'image/jpeg';
+      const uploadResult = await uploadToS3(
+        req.file.buffer,
+        fileName,
+        mimeType,
+        'auth/face-images'
+      );
+      faceImage = uploadResult.fileUrl;
+    } else if (req.body.faceImage) {
+      faceImage = req.body.faceImage;
+    }
+
     const loginData = {
       email,
       identifier,
       password,
       ipAddress: req.ip || req.connection.remoteAddress,
       userAgent: req.get('User-Agent'),
-      faceImage: req.file ? req.file.buffer.toString('base64') : null
+      faceImage
     };
 
     const result = await authService.login(loginData);

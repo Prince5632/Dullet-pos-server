@@ -20,6 +20,7 @@ const auditRoutes = require("./routes/audit.routes");
 const transitRoutes = require("./routes/transit.routes");
 const transactionRoutes = require("./routes/transaction.routes");
 const productionRoutes = require("./routes/production.routes");
+const uploadRoutes = require("./routes/upload.routes");
 
 const app = express();
 const Models = require("./models");
@@ -64,6 +65,7 @@ app.use("/api/audit", auditRoutes);
 app.use("/api/transits", transitRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/productions", productionRoutes);
+app.use("/api/upload", uploadRoutes);
 
 /**
  * @swagger

@@ -1,10 +1,5 @@
-const {
-  Order,
-  Customer,
-  Godown,
-  DeliveryTimePdfChanges,
-} = require("../models");
-const { AuditLog } = require("../models");
+const { Order, Customer, User, Inventory, Godown, AuditLog } = require("../models");
+const { uploadBase64ToS3 } = require("../utils/s3Upload");
 const transactionService = require("./transaction.service");
 const {
   QUICK_PRODUCT_BASES,
@@ -547,6 +542,17 @@ class OrderService {
           );
         }
       }
+    }
+
+    // Upload captured image to S3 if it's base64
+    if (orderData.capturedImage && orderData.capturedImage.startsWith('data:')) {
+      const s3Result = await uploadBase64ToS3(
+        orderData.capturedImage,
+        `order-${orderData.customer}-${Date.now()}.jpg`,
+        'image/jpeg',
+        'orders/captured'
+      );
+      orderData.capturedImage = s3Result.fileUrl;
     }
 
     // Determine creator role name for audit fields

@@ -1,6 +1,7 @@
 const { Transit, Godown, User } = require("../models");
 const { AuditLog } = require("../models");
 const { default: mongoose } = require("mongoose");
+const { uploadToS3 } = require("../utils/s3Upload");
 
 class TransitService {
   // Get all transits with pagination and filtering
@@ -188,19 +189,24 @@ class TransitService {
     // Set createdBy to current user
     transitData.createdBy = currentUser._id;
 
-    // Process attachments if any
+    // Process attachments if any - Upload to S3
     if (transitData.attachments && transitData.attachments.length > 0) {
       const processedAttachments = [];
       
       for (const file of transitData.attachments) {
-        // Convert file buffer to base64
-        const base64Data = file.buffer.toString('base64');
+        // Upload file to S3
+        const s3Result = await uploadToS3(
+          file.buffer,
+          file.originalname,
+          file.mimetype,
+          'transit/attachments'
+        );
         
         processedAttachments.push({
           fileName: file.originalname,
           fileType: file.mimetype,
           fileSize: file.size,
-          base64Data: base64Data,
+          base64Data: s3Result.fileUrl, // Store S3 URL instead of base64
           uploadedAt: new Date()
         });
       }
@@ -305,19 +311,24 @@ if(!updateData.assignedTo){
 
     }
     
-    // Process new attachments if any
+    // Process new attachments if any - Upload to S3
     if (updateData.newAttachments && updateData.newAttachments.length > 0) {
       const processedNewAttachments = [];
       
       for (const file of updateData.newAttachments) {
-        // Convert file buffer to base64
-        const base64Data = file.buffer.toString('base64');
+        // Upload file to S3
+        const s3Result = await uploadToS3(
+          file.buffer,
+          file.originalname,
+          file.mimetype,
+          'transit/attachments'
+        );
         
         processedNewAttachments.push({
           fileName: file.originalname,
           fileType: file.mimetype,
           fileSize: file.size,
-          base64Data: base64Data,
+          base64Data: s3Result.fileUrl, // Store S3 URL instead of base64
           uploadedAt: new Date()
         });
       }

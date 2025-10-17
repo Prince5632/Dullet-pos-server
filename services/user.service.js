@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs/promises");
 const crypto = require("crypto");
 const { sendNewUserCredentialsEmail } = require("../utils/email");
+const { uploadBase64ToS3, uploadToS3 } = require("../utils/s3Upload");
 
 const UPLOAD_ROOT = path.join(__dirname, "..", "uploads");
 const DOCUMENTS_SUBDIR = "documents";
@@ -53,16 +54,22 @@ const saveBufferToFile = async (buffer, subDir, originalName) => {
 
 const buildDocumentEntry = async (documentPayload) => {
   if (!documentPayload?.buffer) return null;
-  const saved = await saveBufferToFile(
+  
+  const originalName = documentPayload.originalname || `${documentPayload.type || "document"}.pdf`;
+  
+  // Upload to S3 instead of local storage
+  const s3Result = await uploadToS3(
     documentPayload.buffer,
-    DOCUMENTS_SUBDIR,
-    documentPayload.originalname || `${documentPayload.type || "document"}.pdf`
+    originalName,
+    documentPayload.mimetype,
+    'users/documents'
   );
+  
   return {
     type: documentPayload.type || "other",
     label: documentPayload.label || documentPayload.originalname,
-    fileName: saved.fileName,
-    url: saved.url,
+    fileName: originalName,
+    url: s3Result.fileUrl, // Return S3 URL
     mimeType: documentPayload.mimetype
   };
 };
@@ -89,7 +96,13 @@ const saveProfilePhoto = async (buffer, email, mimeType) => {
   if (!buffer) return null;
   const extension = getExtensionFromMime(mimeType) || "jpg";
   const originalName = `${sanitizeFileName(email || "user")}-profile.${extension}`;
-  return await saveBufferToFile(buffer, PROFILES_SUBDIR, originalName);
+  
+  // Upload to S3 instead of local storage
+  const s3Result = await uploadToS3(buffer, originalName, mimeType, 'users/profiles');
+  return {
+    fileName: originalName,
+    url: s3Result.fileUrl // Return S3 URL
+  };
 };
 
 // Get all users with pagination and filtering

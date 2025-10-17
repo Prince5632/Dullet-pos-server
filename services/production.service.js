@@ -1,5 +1,6 @@
 const { Production, User } = require("../models");
 const { AuditLog } = require("../models");
+const { uploadToS3 } = require("../utils/s3Upload");
 
 class ProductionService {
   // Get all production records with pagination and filtering
@@ -164,19 +165,24 @@ class ProductionService {
         throw new Error("Input quantity must be greater than 0");
       }
 
-      // Process attachments if any
+      // Process attachments if any - Upload to S3
       if (productionData.attachments && productionData.attachments.length > 0) {
         const processedAttachments = [];
         
         for (const file of productionData.attachments) {
-          // Convert file buffer to base64
-          const base64Data = file.buffer.toString('base64');
+          // Upload file to S3
+          const s3Result = await uploadToS3(
+            file.buffer,
+            file.originalname,
+            file.mimetype,
+            'production/attachments'
+          );
           
           processedAttachments.push({
             fileName: file.originalname,
             fileType: file.mimetype,
             fileSize: file.size,
-            base64Data: base64Data,
+            base64Data: s3Result.fileUrl, // Store S3 URL instead of base64
             uploadedAt: new Date()
           });
         }
@@ -265,19 +271,24 @@ class ProductionService {
         );
       }
       
-      // Process new attachments if any
+      // Process new attachments if any - Upload to S3
       if (updateData.newAttachments && updateData.newAttachments.length > 0) {
         const processedNewAttachments = [];
         
         for (const file of updateData.newAttachments) {
-          // Convert file buffer to base64
-          const base64Data = file.buffer.toString('base64');
+          // Upload file to S3
+          const s3Result = await uploadToS3(
+            file.buffer,
+            file.originalname,
+            file.mimetype,
+            'production/attachments'
+          );
           
           processedNewAttachments.push({
             fileName: file.originalname,
             fileType: file.mimetype,
             fileSize: file.size,
-            base64Data: base64Data,
+            base64Data: s3Result.fileUrl, // Store S3 URL instead of base64
             uploadedAt: new Date()
           });
         }
