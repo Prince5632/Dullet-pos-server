@@ -291,7 +291,7 @@ const getGodowns = async (req, res) => {
           },
         });
       }
-
+ 
       visitPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
 
       // Aggregate visit counts with filters
@@ -506,14 +506,14 @@ const getGodowns = async (req, res) => {
         const onlyWithOrders = req.query.onlyWithOrders === 'true';
         
         if (onlyWithOrders) {
-          // For customer reports: count only customers who have placed orders OR visits in date range
+          // For customer reports: count only customers who have placed orders in date range
           const customerOrderFilter = {
             godown: { $in: godownIds },
-            type: { $in: ["order", "visit"] }, // Include both orders and visits
+            type: "order",
             status: { $nin: ["cancelled", "rejected"] }
           };
 
-          // Apply date range filter for orders/visits if provided
+          // Apply date range filter for orders if provided
           if (req.query.dateFrom || req.query.dateTo) {
             customerOrderFilter.orderDate = {};
             if (req.query.dateFrom) {
@@ -526,7 +526,7 @@ const getGodowns = async (req, res) => {
             }
           }
 
-          // Aggregate unique customer counts by godown based on orders/visits
+          // Aggregate unique customer counts by godown based on orders
           const customerCounts = await Order.aggregate([
             { $match: customerOrderFilter },
             {
@@ -566,6 +566,16 @@ const getGodowns = async (req, res) => {
             status: { $nin: ["cancelled", "rejected"] }
           });
           
+          // Get customers without assignedGodownId (or null) who have orders
+          const customersWithoutAssignment = await Customer.find({
+            isActive: true,
+            _id: { $in: customersWithOrders },
+            $or: [
+              { assignedGodownId: { $exists: false } },
+              { assignedGodownId: null }
+            ]
+          }).select('_id');
+          
           // Create maps for godown assignments
           const godownAssignmentMap = new Map();
           assignedCustomers.forEach(c => {
@@ -576,11 +586,12 @@ const getGodowns = async (req, res) => {
             godownAssignmentMap.get(godownId).add(c._id.toString());
           });
           
-          // Get godown for each customer with orders
+          // Get godown for each customer with orders but no assignedGodownId
+          const customersWithoutAssignmentIds = customersWithoutAssignment.map(c => c._id);
           const customerGodownOrders = await Order.aggregate([
             {
               $match: {
-                customer: { $in: customersWithOrders },
+                customer: { $in: customersWithoutAssignmentIds },
                 godown: { $in: godownIds },
                 type: "order",
                 status: { $nin: ["cancelled", "rejected"] }
@@ -605,7 +616,7 @@ const getGodowns = async (req, res) => {
             godownCustomerOrderMap.get(godownId).add(item._id.customer.toString());
           });
           
-          // Count all customers per godown (assigned or have ordered)
+          // Count all customers per godown (assigned + customers with orders but no assignment)
           godownIds.forEach(godownId => {
             const godownIdStr = godownId.toString();
             const assignedToGodown = godownAssignmentMap.get(godownIdStr) || new Set();

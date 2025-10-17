@@ -140,14 +140,16 @@ class CustomerService {
       // If specific godownId is provided, filter by that godown
       const godownObjectId = new mongoose.Types.ObjectId(godownId);
       
-      // Get customers who have orders from this godown
+      // Get customers who have orders from this godown (excluding cancelled/rejected orders)
       const { Order } = require("../models");
       const customersWithOrders = await Order.distinct("customer", {
         godown: godownObjectId,
+        type: "order",
+        status: { $nin: ["cancelled", "rejected"] }
       });
       
       if (customersWithOrders.length > 0) {
-        // Include customers assigned to this godown OR who have ordered from it
+        // Include customers assigned to this godown OR active customers who have ordered from it (but have no assignedGodownId)
         godownConditions = [
           { assignedGodownId: godownObjectId },
           { _id: { $in: customersWithOrders }, assignedGodownId: { $exists: false } },
@@ -188,6 +190,8 @@ class CustomerService {
           godown: {
             $in: allowedGodowns.map((id) => new mongoose.Types.ObjectId(id)),
           },
+          type: "order",
+          status: { $nin: ["cancelled", "rejected"] }
         });
 
         if (customersWithOrders.length > 0) {
