@@ -182,10 +182,11 @@ exports.getCustomerReports = async (req, res) => {
  */
 exports.getInactiveCustomers = async (req, res) => {
   try {
-    const { days = 7 } = req.query;
+    const { days = 7, godownId } = req.query;
 
     const inactiveCustomers = await reportService.getInactiveCustomers(
-      parseInt(days)
+      parseInt(days),
+      godownId
     );
 
     return sendSuccess(

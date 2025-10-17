@@ -662,21 +662,63 @@ exports.getCustomerReports = async (
 /**
  * Get Inactive Customers
  */
-exports.getInactiveCustomers = async (days = 7) => {
+exports.getInactiveCustomers = async (days = 7, godownId = null) => {
   try {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    const customers = await Customer.find({ isActive: true });
+    let customers;
+    
+    if (godownId) {
+      // When filtering by godown, only get customers relevant to that godown
+      // (assigned to it or have ordered from it)
+      const godownObjectId = new mongoose.Types.ObjectId(godownId);
+      
+      // Get customers assigned to this godown
+      const assignedCustomerIds = await Customer.find({ 
+        isActive: true,
+        assignedGodownId: godownObjectId
+      }).distinct('_id');
+      
+      // Get customers who have ordered from this godown
+      const customersWithOrders = await Order.distinct('customer', {
+        godown: godownObjectId,
+        type: "order",
+        status: { $nin: ["cancelled", "rejected"] }
+      });
+      
+      // Combine both sets
+      const relevantCustomerIds = new Set([
+        ...assignedCustomerIds.map(id => id.toString()),
+        ...customersWithOrders.map(id => id.toString())
+      ]);
+      
+      // Get full customer details for relevant customers
+      customers = await Customer.find({ 
+        _id: { $in: Array.from(relevantCustomerIds).map(id => new mongoose.Types.ObjectId(id)) },
+        isActive: true 
+      });
+    } else {
+      // When no godown filter, get all active customers
+      customers = await Customer.find({ isActive: true });
+    }
 
     const inactiveCustomers = [];
 
     for (const customer of customers) {
-      const lastOrder = await Order.findOne({
+      // Build order filter
+      const orderFilter = {
         customer: customer._id,
         type: "order",
         status: { $nin: ["cancelled", "rejected"] },
-      })
+      };
+
+      // Add godown filter if specified
+      if (godownId) {
+        orderFilter.godown = new mongoose.Types.ObjectId(godownId);
+      }
+
+      const lastOrder = await Order.findOne(orderFilter)
         .sort({ orderDate: -1 })
         .select("orderDate orderNumber totalAmount");
 

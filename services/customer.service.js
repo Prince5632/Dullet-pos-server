@@ -19,6 +19,7 @@ class CustomerService {
       dateTo = "",
       sortBy = "createdAt",
       sortOrder = "desc",
+      godownId = "",
     } = query;
 
     // Build filter object
@@ -131,14 +132,38 @@ class CustomerService {
       if (toDate) filter.createdAt.$lte = toDate;
     }
 
-    // Apply user-specific godown filtering based on assignedGodownId
+    // Apply godown filtering
     let godownConditions = null;
-    if (
+    const mongoose = require("mongoose");
+    
+    if (godownId) {
+      // If specific godownId is provided, filter by that godown
+      const godownObjectId = new mongoose.Types.ObjectId(godownId);
+      
+      // Get customers who have orders from this godown
+      const { Order } = require("../models");
+      const customersWithOrders = await Order.distinct("customer", {
+        godown: godownObjectId,
+      });
+      
+      if (customersWithOrders.length > 0) {
+        // Include customers assigned to this godown OR who have ordered from it
+        godownConditions = [
+          { assignedGodownId: godownObjectId },
+          { _id: { $in: customersWithOrders }, assignedGodownId: { $exists: false } },
+          { _id: { $in: customersWithOrders }, assignedGodownId: null },
+        ];
+      } else {
+        // Only filter by assignedGodownId if no orders found
+        filter.assignedGodownId = godownObjectId;
+      }
+    } else if (
       requestingUser &&
       (requestingUser.primaryGodown ||
         (requestingUser.accessibleGodowns &&
           requestingUser.accessibleGodowns.length > 0))
     ) {
+      // Apply user-specific godown filtering based on accessible godowns
       const allowedGodowns = [];
 
       if (requestingUser.primaryGodown) {
@@ -157,8 +182,6 @@ class CustomerService {
       }
 
       if (allowedGodowns.length > 0) {
-        const mongoose = require("mongoose");
-
         // Also include customers who have orders from accessible godowns but no assignedGodownId
         const { Order } = require("../models");
         const customersWithOrders = await Order.distinct("customer", {

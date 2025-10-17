@@ -407,99 +407,306 @@ const getGodowns = async (req, res) => {
         return acc;
       }, {});
 
-      // Build customer filter for counting based on assignedGodownId
-      const customerCountFilter = { 
-        assignedGodownId: { $in: godownIds },
-        isActive: true // Only count active customers
-      };
+      // Build customer filter for counting based on orders placed in godowns
+      // This matches the logic used in customer reports API
+      
+      // Check if we need to count inactive customers
+      const inactiveDays = req.query.inactiveDays ? parseInt(req.query.inactiveDays) : null;
+      
+      if (inactiveDays) {
+        // For inactive customers per godown: count customers assigned to or who have ordered from each godown
+        // and check if they're inactive in that specific godown
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - inactiveDays);
+        
+        // Get customers assigned to these godowns
+        const assignedCustomers = await Customer.find({ 
+          isActive: true,
+          assignedGodownId: { $in: godownIds }
+        }).select('_id assignedGodownId');
+        
+        // Get all customers who have ever ordered from these godowns
+        const customersWithOrders = await Order.distinct('customer', {
+          godown: { $in: godownIds },
+          type: "order",
+          status: { $nin: ["cancelled", "rejected"] }
+        });
+        
+        // Combine both sets of customers
+        const allRelevantCustomerIds = new Set();
+        assignedCustomers.forEach(c => allRelevantCustomerIds.add(c._id.toString()));
+        customersWithOrders.forEach(c => allRelevantCustomerIds.add(c.toString()));
+        
+        // Get last order date for each customer in each godown
+        const customerGodownOrders = await Order.aggregate([
+          {
+            $match: {
+              customer: { $in: Array.from(allRelevantCustomerIds).map(id => new mongoose.Types.ObjectId(id)) },
+              godown: { $in: godownIds },
+              type: "order",
+              status: { $nin: ["cancelled", "rejected"] }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                godown: "$godown",
+                customer: "$customer"
+              },
+              lastOrderDate: { $max: "$orderDate" }
+            }
+          }
+        ]);
+        
+        // Create maps for godown assignments and order history
+        const godownAssignmentMap = new Map();
+        assignedCustomers.forEach(c => {
+          const godownId = c.assignedGodownId.toString();
+          if (!godownAssignmentMap.has(godownId)) {
+            godownAssignmentMap.set(godownId, new Set());
+          }
+          godownAssignmentMap.get(godownId).add(c._id.toString());
+        });
+        
+        const godownCustomerOrderMap = new Map();
+        customerGodownOrders.forEach(item => {
+          const godownId = item._id.godown.toString();
+          if (!godownCustomerOrderMap.has(godownId)) {
+            godownCustomerOrderMap.set(godownId, new Map());
+          }
+          godownCustomerOrderMap.get(godownId).set(
+            item._id.customer.toString(), 
+            item.lastOrderDate
+          );
+        });
+        
+        // Count inactive customers per godown
+        godownIds.forEach(godownId => {
+          const godownIdStr = godownId.toString();
+          const assignedToGodown = godownAssignmentMap.get(godownIdStr) || new Set();
+          const customerOrdersInGodown = godownCustomerOrderMap.get(godownIdStr) || new Map();
+          
+          // Get all relevant customers for this godown (assigned or have ordered)
+          const relevantCustomers = new Set(assignedToGodown);
+          customerOrdersInGodown.forEach((_, customerId) => {
+            relevantCustomers.add(customerId);
+          });
+          
+          // Count customers who are inactive in this godown
+          const inactiveCount = Array.from(relevantCustomers).filter(customerId => {
+            const lastOrderDate = customerOrdersInGodown.get(customerId);
+            // Customer is inactive if they never ordered from this godown OR last order was before cutoff
+            return !lastOrderDate || lastOrderDate < cutoffDate;
+          }).length;
+          
+          customerCountsMap[godownIdStr] = inactiveCount;
+        });
+      } else {
+        // Check if we should only count customers with orders (for customer reports)
+        const onlyWithOrders = req.query.onlyWithOrders === 'true';
+        
+        if (onlyWithOrders) {
+          // For customer reports: count only customers who have placed orders OR visits in date range
+          const customerOrderFilter = {
+            godown: { $in: godownIds },
+            type: { $in: ["order", "visit"] }, // Include both orders and visits
+            status: { $nin: ["cancelled", "rejected"] }
+          };
 
-      // Apply search filter for customers if provided
-      if (req.query.search) {
-        customerCountFilter.$or = [
-          { businessName: { $regex: req.query.search, $options: "i" } },
-          { customerId: { $regex: req.query.search, $options: "i" } },
-          { contactPersonName: { $regex: req.query.search, $options: "i" } },
-          { phone: { $regex: req.query.search, $options: "i" } },
-        ];
-      }
+          // Apply date range filter for orders/visits if provided
+          if (req.query.dateFrom || req.query.dateTo) {
+            customerOrderFilter.orderDate = {};
+            if (req.query.dateFrom) {
+              customerOrderFilter.orderDate.$gte = new Date(req.query.dateFrom);
+            }
+            if (req.query.dateTo) {
+              const endDate = new Date(req.query.dateTo);
+              endDate.setHours(23, 59, 59, 999);
+              customerOrderFilter.orderDate.$lte = endDate;
+            }
+          }
 
-      // Apply customer type filter if provided
-      if (req.query.customerType) {
-        customerCountFilter.customerType = req.query.customerType;
-      }
+          // Aggregate unique customer counts by godown based on orders/visits
+          const customerCounts = await Order.aggregate([
+            { $match: customerOrderFilter },
+            {
+              $group: {
+                _id: {
+                  godown: "$godown",
+                  customer: "$customer"
+                }
+              }
+            },
+            {
+              $group: {
+                _id: "$_id.godown",
+                count: { $sum: 1 }
+              }
+            }
+          ]);
 
-      // Apply date range filter for customer creation if provided
-      if (req.query.dateFrom || req.query.dateTo) {
-        customerCountFilter.createdAt = {};
-        if (req.query.dateFrom) {
-          customerCountFilter.createdAt.$gte = new Date(req.query.dateFrom);
+          customerCountsMap = customerCounts.reduce((acc, c) => {
+            acc[c._id.toString()] = c.count;
+            return acc;
+          }, {});
+        } else {
+          // For all customers: count ALL active customers (assigned or have ordered from godown)
+          // This matches the CustomersPage which shows all customers regardless of order history
+          
+          // Get customers assigned to these godowns
+          const assignedCustomers = await Customer.find({ 
+            isActive: true,
+            assignedGodownId: { $in: godownIds }
+          }).select('_id assignedGodownId');
+          
+          // Get all customers who have ever ordered from these godowns
+          const customersWithOrders = await Order.distinct('customer', {
+            godown: { $in: godownIds },
+            type: "order",
+            status: { $nin: ["cancelled", "rejected"] }
+          });
+          
+          // Create maps for godown assignments
+          const godownAssignmentMap = new Map();
+          assignedCustomers.forEach(c => {
+            const godownId = c.assignedGodownId.toString();
+            if (!godownAssignmentMap.has(godownId)) {
+              godownAssignmentMap.set(godownId, new Set());
+            }
+            godownAssignmentMap.get(godownId).add(c._id.toString());
+          });
+          
+          // Get godown for each customer with orders
+          const customerGodownOrders = await Order.aggregate([
+            {
+              $match: {
+                customer: { $in: customersWithOrders },
+                godown: { $in: godownIds },
+                type: "order",
+                status: { $nin: ["cancelled", "rejected"] }
+              }
+            },
+            {
+              $group: {
+                _id: {
+                  godown: "$godown",
+                  customer: "$customer"
+                }
+              }
+            }
+          ]);
+          
+          const godownCustomerOrderMap = new Map();
+          customerGodownOrders.forEach(item => {
+            const godownId = item._id.godown.toString();
+            if (!godownCustomerOrderMap.has(godownId)) {
+              godownCustomerOrderMap.set(godownId, new Set());
+            }
+            godownCustomerOrderMap.get(godownId).add(item._id.customer.toString());
+          });
+          
+          // Count all customers per godown (assigned or have ordered)
+          godownIds.forEach(godownId => {
+            const godownIdStr = godownId.toString();
+            const assignedToGodown = godownAssignmentMap.get(godownIdStr) || new Set();
+            const customersWithOrdersInGodown = godownCustomerOrderMap.get(godownIdStr) || new Set();
+            
+            // Combine both sets to get all relevant customers
+            const allCustomers = new Set([...assignedToGodown, ...customersWithOrdersInGodown]);
+            
+            customerCountsMap[godownIdStr] = allCustomers.size;
+          });
         }
-        if (req.query.dateTo) {
-          // Set end date to end of day (23:59:59.999) to include all customers created on that date
-          const endDate = new Date(req.query.dateTo);
-          endDate.setHours(23, 59, 59, 999);
-          customerCountFilter.createdAt.$lte = endDate;
-        }
       }
-
-      // Aggregate customer counts by assignedGodownId
-      const customerCounts = await Customer.aggregate([
-        { $match: customerCountFilter },
-        { $group: { _id: "$assignedGodownId", count: { $sum: 1 } } }
-      ]);
-
-      customerCountsMap = customerCounts.reduce((acc, c) => {
-        acc[c._id.toString()] = c.count;
-        return acc;
-      }, {});
     }
 
-    // Calculate total customer count
-    // 1. Sum of customerCount from all godowns
-    const assignedCustomersCount = Object.values(customerCountsMap).reduce((sum, count) => sum + count, 0);
+    // Calculate total customer count based on orders placed (matching customer reports API)
+    let allCustomerCount = 0;
     
-    // 2. Count customers not assigned to any godown
-    const unassignedCustomerFilter = {
-      $or: [
-        { assignedGodownId: { $exists: false } },
-        { assignedGodownId: null }
-      ],
-      isActive: true
-    };
-
-    // Apply additional filters for unassigned customers if they exist in the request
-    if (req.query.search) {
-      unassignedCustomerFilter.$and = [
+    // Check if we need to count inactive customers
+    const inactiveDaysForTotal = req.query.inactiveDays ? parseInt(req.query.inactiveDays) : null;
+    
+    if (inactiveDaysForTotal) {
+      // For inactive customers: count ALL active customers who haven't ordered in N days
+      // This matches the logic in getInactiveCustomers service
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - inactiveDaysForTotal);
+      
+      // Get all active customers
+      const allActiveCustomers = await Customer.find({ isActive: true }).select('_id');
+      const customerIds = allActiveCustomers.map(c => c._id);
+      
+      // Get last order date for each customer
+      const customerLastOrders = await Order.aggregate([
         {
-          $or: [
-            { name: { $regex: req.query.search, $options: "i" } },
-            { email: { $regex: req.query.search, $options: "i" } },
-            { phone: { $regex: req.query.search, $options: "i" } }
-          ]
+          $match: {
+            customer: { $in: customerIds },
+            type: "order",
+            status: { $nin: ["cancelled", "rejected"] }
+          }
+        },
+        {
+          $group: {
+            _id: "$customer",
+            lastOrderDate: { $max: "$orderDate" }
+          }
         }
-      ];
-    }
+      ]);
+      
+      // Create a map of customer ID to last order date
+      const lastOrderMap = new Map();
+      customerLastOrders.forEach(item => {
+        lastOrderMap.set(item._id.toString(), item.lastOrderDate);
+      });
+      
+      // Count customers who are inactive (no order or last order before cutoff)
+      allCustomerCount = customerIds.filter(customerId => {
+        const lastOrderDate = lastOrderMap.get(customerId.toString());
+        return !lastOrderDate || lastOrderDate < cutoffDate;
+      }).length;
+    } else {
+      // Check if we should only count customers with orders
+      const onlyWithOrders = req.query.onlyWithOrders === 'true';
+      
+      if (onlyWithOrders) {
+        // For customer reports: count unique customers who have placed orders in the date range
+        const allCustomerOrderFilter = {
+          type: "order",
+          status: { $nin: ["cancelled", "rejected"] }
+        };
 
-    if (req.query.customerType) {
-      unassignedCustomerFilter.customerType = req.query.customerType;
-    }
+        // Apply date range filter for orders if provided
+        if (req.query.dateFrom || req.query.dateTo) {
+          allCustomerOrderFilter.orderDate = {};
+          if (req.query.dateFrom) {
+            allCustomerOrderFilter.orderDate.$gte = new Date(req.query.dateFrom);
+          }
+          if (req.query.dateTo) {
+            const endDate = new Date(req.query.dateTo);
+            endDate.setHours(23, 59, 59, 999);
+            allCustomerOrderFilter.orderDate.$lte = endDate;
+          }
+        }
 
-    if (req.query.dateFrom || req.query.dateTo) {
-      unassignedCustomerFilter.createdAt = {};
-      if (req.query.dateFrom) {
-        unassignedCustomerFilter.createdAt.$gte = new Date(req.query.dateFrom);
+        // Count unique customers across all orders
+        const allCustomerCountResult = await Order.aggregate([
+          { $match: allCustomerOrderFilter },
+          {
+            $group: {
+              _id: "$customer"
+            }
+          },
+          {
+            $count: "totalCustomers"
+          }
+        ]);
+
+        allCustomerCount = allCustomerCountResult.length > 0 ? allCustomerCountResult[0].totalCustomers : 0;
+      } else {
+        // For all customers: count ALL active customers (matching CustomersPage)
+        allCustomerCount = await Customer.countDocuments({ isActive: true });
       }
-      if (req.query.dateTo) {
-        const endDate = new Date(req.query.dateTo);
-        endDate.setHours(23, 59, 59, 999);
-        unassignedCustomerFilter.createdAt.$lte = endDate;
-      }
     }
-
-    const unassignedCustomersCount = await Customer.countDocuments(unassignedCustomerFilter);
-    
-    // 3. Combine both counts
-    const allCustomerCount = assignedCustomersCount + unassignedCustomersCount;
 
     const godownsWithCounts = godowns.map((g) => ({
       ...g,
