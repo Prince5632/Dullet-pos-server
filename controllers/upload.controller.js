@@ -10,16 +10,13 @@ exports.uploadFile = async (req, res) => {
     if (!req.file) {
       return sendError(res, 'No file provided', 400);
     }
-
     const { folder = 'uploads' } = req.body;
-    
     const result = await uploadToS3(
       req.file.buffer,
       req.file.originalname,
       req.file.mimetype,
       folder
     );
-    console.log(result);
 
     return sendSuccess(res, result, 'File uploaded successfully');
   } catch (error) {
