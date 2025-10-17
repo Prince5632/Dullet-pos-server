@@ -488,9 +488,15 @@ exports.getCustomerReports = async (
   filters = {},
   sortBy = "totalSpent",
   sortOrder = "desc",
-  requestingUser = null
+  requestingUser = null,
+  page = 1,
+  limit = 10
 ) => {
   try {
+    // Validate pagination parameters
+    const validPage = Math.max(1, parseInt(page) || 1);
+    const validLimit = Math.max(1, Math.min(100, parseInt(limit) || 10));
+    
     const { dateRange, customerId, inactiveDays, godownId } = filters;
 
     // Build match criteria
@@ -548,7 +554,7 @@ exports.getCustomerReports = async (
     }
 
     // Aggregate orders by customer
-    const reports = await Order.aggregate([
+    const allReports = await Order.aggregate([
       { $match: matchCriteria },
       {
         $group: {
@@ -623,7 +629,32 @@ exports.getCustomerReports = async (
       },
     ]);
 
-    // Filter inactive customers if requested
+    // Calculate summary statistics from ALL reports (before pagination)
+    const summary = {
+      totalCustomers: allReports.length,
+      activeCustomers: allReports.filter((r) => r.daysSinceLastOrder <= 30).length,
+      inactiveCustomers: inactiveDays 
+        ? allReports.filter((r) => r.daysSinceLastOrder >= inactiveDays).length 
+        : 0,
+      totalRevenueAll: allReports.reduce((sum, r) => sum + r.totalSpent, 0),
+      totalOutstandingAll: allReports.reduce(
+        (sum, r) => sum + r.totalOutstanding,
+        0
+      ),
+      avgCustomerValue:
+        allReports.length > 0
+          ? allReports.reduce((sum, r) => sum + r.lifetimeValue, 0) /
+            allReports.length
+          : 0,
+    };
+
+    // Apply pagination AFTER calculating summary
+    const totalRecords = allReports.length;
+    const totalPages = Math.ceil(totalRecords / validLimit);
+    const skip = (validPage - 1) * validLimit;
+    const reports = allReports.slice(skip, skip + validLimit);
+
+    // Filter inactive customers if requested (from paginated results)
     let inactiveCustomers = [];
     if (inactiveDays) {
       inactiveCustomers = reports.filter(
@@ -631,28 +662,19 @@ exports.getCustomerReports = async (
       );
     }
 
-    // Calculate summary statistics
-    const summary = {
-      totalCustomers: reports.length,
-      activeCustomers: reports.filter((r) => r.daysSinceLastOrder <= 30).length,
-      inactiveCustomers: inactiveDays ? inactiveCustomers.length : 0,
-      totalRevenueAll: reports.reduce((sum, r) => sum + r.totalSpent, 0),
-      totalOutstandingAll: reports.reduce(
-        (sum, r) => sum + r.totalOutstanding,
-        0
-      ),
-      avgCustomerValue:
-        reports.length > 0
-          ? reports.reduce((sum, r) => sum + r.lifetimeValue, 0) /
-            reports.length
-          : 0,
-    };
-
     return {
       summary,
       reports: inactiveDays ? inactiveCustomers : reports,
       dateRange: dateRange || null,
       filters: { inactiveDays },
+      pagination: {
+        currentPage: validPage,
+        totalPages,
+        totalRecords,
+        limit: validLimit,
+        hasNext: validPage < totalPages,
+        hasPrev: validPage > 1,
+      },
     };
   } catch (error) {
     throw new Error(`Failed to generate customer reports: ${error.message}`);
@@ -662,16 +684,52 @@ exports.getCustomerReports = async (
 /**
  * Get Inactive Customers
  */
-exports.getInactiveCustomers = async (days = 7, godownId = null) => {
+exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit = 10) => {
   try {
+    // Validate pagination parameters
+    const validPage = Math.max(1, parseInt(page) || 1);
+    const validLimit = Math.max(1, Math.min(100, parseInt(limit) || 10));
+    
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    let customers;
+    // Build aggregation pipeline to get last order date for each customer
+    const orderMatchCriteria = {
+      type: "order",
+      status: { $nin: ["cancelled", "rejected"] }
+    };
     
     if (godownId) {
-      // When filtering by godown, only get customers relevant to that godown
-      // (assigned to it or have ordered from it)
+      orderMatchCriteria.godown = new mongoose.Types.ObjectId(godownId);
+    }
+
+    // Get last order info for all customers using aggregation (much faster)
+    const customerLastOrders = await Order.aggregate([
+      { $match: orderMatchCriteria },
+      {
+        $group: {
+          _id: "$customer",
+          lastOrderDate: { $max: "$orderDate" },
+          lastOrderNumber: { $last: "$orderNumber" },
+          lastOrderAmount: { $last: "$totalAmount" }
+        }
+      }
+    ]);
+
+    // Create a map of customer ID to last order info
+    const lastOrderMap = new Map();
+    customerLastOrders.forEach(item => {
+      lastOrderMap.set(item._id.toString(), {
+        lastOrderDate: item.lastOrderDate,
+        lastOrderNumber: item.lastOrderNumber,
+        lastOrderAmount: item.lastOrderAmount
+      });
+    });
+
+    // Build customer filter
+    const customerFilter = { isActive: true };
+    
+    if (godownId) {
       const godownObjectId = new mongoose.Types.ObjectId(godownId);
       
       // Get customers assigned to this godown
@@ -681,52 +739,35 @@ exports.getInactiveCustomers = async (days = 7, godownId = null) => {
       }).distinct('_id');
       
       // Get customers who have ordered from this godown
-      const customersWithOrders = await Order.distinct('customer', {
-        godown: godownObjectId,
-        type: "order",
-        status: { $nin: ["cancelled", "rejected"] }
-      });
+      const customersWithOrderIds = Array.from(lastOrderMap.keys()).map(id => new mongoose.Types.ObjectId(id));
       
       // Combine both sets
       const relevantCustomerIds = new Set([
         ...assignedCustomerIds.map(id => id.toString()),
-        ...customersWithOrders.map(id => id.toString())
+        ...customersWithOrderIds.map(id => id.toString())
       ]);
       
-      // Get full customer details for relevant customers
-      customers = await Customer.find({ 
-        _id: { $in: Array.from(relevantCustomerIds).map(id => new mongoose.Types.ObjectId(id)) },
-        isActive: true 
-      });
-    } else {
-      // When no godown filter, get all active customers
-      customers = await Customer.find({ isActive: true });
+      customerFilter._id = { 
+        $in: Array.from(relevantCustomerIds).map(id => new mongoose.Types.ObjectId(id)) 
+      };
     }
 
+    // Get all active customers
+    const customers = await Customer.find(customerFilter)
+      .select('customerId businessName contactPersonName phone email customerType address totalOrders totalOrderValue outstandingAmount')
+      .lean();
+
+    // Filter inactive customers and build response
     const inactiveCustomers = [];
-
+    
     for (const customer of customers) {
-      // Build order filter
-      const orderFilter = {
-        customer: customer._id,
-        type: "order",
-        status: { $nin: ["cancelled", "rejected"] },
-      };
-
-      // Add godown filter if specified
-      if (godownId) {
-        orderFilter.godown = new mongoose.Types.ObjectId(godownId);
-      }
-
-      const lastOrder = await Order.findOne(orderFilter)
-        .sort({ orderDate: -1 })
-        .select("orderDate orderNumber totalAmount");
-
-      if (!lastOrder || lastOrder.orderDate < cutoffDate) {
-        const daysSinceLastOrder = lastOrder
-          ? Math.floor(
-              (new Date() - lastOrder.orderDate) / (1000 * 60 * 60 * 24)
-            )
+      const lastOrderInfo = lastOrderMap.get(customer._id.toString());
+      const lastOrderDate = lastOrderInfo?.lastOrderDate || null;
+      
+      // Check if customer is inactive (no orders or last order before cutoff)
+      if (!lastOrderDate || lastOrderDate < cutoffDate) {
+        const daysSinceLastOrder = lastOrderDate
+          ? Math.floor((new Date() - lastOrderDate) / (1000 * 60 * 60 * 24))
           : null;
 
         inactiveCustomers.push({
@@ -735,17 +776,17 @@ exports.getInactiveCustomers = async (days = 7, godownId = null) => {
           businessName: customer.businessName,
           contactPerson: customer.contactPersonName,
           phone: customer.phone,
-          email: customer.email,
+          email: customer.email || '',
           customerType: customer.customerType,
-          city: customer.address.city,
-          state: customer.address.state,
-          lastOrderDate: lastOrder?.orderDate || null,
-          lastOrderNumber: lastOrder?.orderNumber || null,
-          lastOrderAmount: lastOrder?.totalAmount || 0,
+          city: customer.address?.city || '',
+          state: customer.address?.state || '',
+          lastOrderDate: lastOrderDate,
+          lastOrderNumber: lastOrderInfo?.lastOrderNumber || null,
+          lastOrderAmount: lastOrderInfo?.lastOrderAmount || 0,
           daysSinceLastOrder,
-          totalOrders: customer.totalOrders,
-          totalOrderValue: customer.totalOrderValue,
-          outstandingAmount: customer.outstandingAmount,
+          totalOrders: customer.totalOrders || 0,
+          totalOrderValue: customer.totalOrderValue || 0,
+          outstandingAmount: customer.outstandingAmount || 0,
         });
       }
     }
@@ -757,12 +798,27 @@ exports.getInactiveCustomers = async (days = 7, godownId = null) => {
       return b.daysSinceLastOrder - a.daysSinceLastOrder;
     });
 
+    // Apply pagination
+    const totalRecords = inactiveCustomers.length;
+    const totalPages = Math.ceil(totalRecords / validLimit);
+    const skip = (validPage - 1) * validLimit;
+    const paginatedCustomers = inactiveCustomers.slice(skip, skip + validLimit);
+
     return {
       days,
-      count: inactiveCustomers.length,
-      customers: inactiveCustomers,
+      count: totalRecords,
+      customers: paginatedCustomers,
+      pagination: {
+        currentPage: validPage,
+        totalPages,
+        totalRecords,
+        limit: validLimit,
+        hasNext: validPage < totalPages,
+        hasPrev: validPage > 1,
+      },
     };
   } catch (error) {
+    console.error('Error in getInactiveCustomers:', error);
     throw new Error(`Failed to get inactive customers: ${error.message}`);
   }
 };

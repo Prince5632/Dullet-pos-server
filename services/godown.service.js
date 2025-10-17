@@ -41,9 +41,7 @@ class GodownService {
       search = '', 
       city = '', 
       state = '', 
-      isActive = '',
-      dateFrom = '',
-      dateTo = ''
+      isActive = ''
     } = query;
     const filter = {};
     
@@ -63,84 +61,9 @@ class GodownService {
     if (state) filter['location.state'] = state;
     if (isActive !== '') filter.isActive = isActive === 'true';
     
-    // Date range filter for createdAt
-    if (dateFrom || dateTo) {
-      // Validate inputs
-      let fromDate = null;
-      let toDate = null;
-
-      if (dateFrom) {
-        const d = new Date(dateFrom);
-        if (isNaN(d.getTime())) {
-          const err = new Error('Invalid dateFrom format. Use YYYY-MM-DD.');
-          err.status = 400;
-          throw err;
-        }
-        // Normalize to start of day UTC
-        fromDate = new Date(
-          Date.UTC(
-            d.getUTCFullYear(),
-            d.getUTCMonth(),
-            d.getUTCDate(),
-            0,
-            0,
-            0,
-            0
-          )
-        );
-      }
-
-      if (dateTo) {
-        const d = new Date(dateTo);
-        if (isNaN(d.getTime())) {
-          const err = new Error('Invalid dateTo format. Use YYYY-MM-DD.');
-          err.status = 400;
-          throw err;
-        }
-        // Normalize to end of day UTC
-        toDate = new Date(
-          Date.UTC(
-            d.getUTCFullYear(),
-            d.getUTCMonth(),
-            d.getUTCDate(),
-            23,
-            59,
-            59,
-            999
-          )
-        );
-      }
-
-      // Ensure dateFrom <= dateTo
-      if (fromDate && toDate && fromDate.getTime() > toDate.getTime()) {
-        const err = new Error('dateFrom cannot be later than dateTo.');
-        err.status = 400;
-        throw err;
-      }
-
-      // Reasonable range: limit to 365 days
-      if (fromDate && toDate) {
-        const diffMs = toDate.getTime() - fromDate.getTime();
-        const diffDays = diffMs / (1000 * 60 * 60 * 24);
-        if (diffDays > 365) {
-          const err = new Error(
-            'Date range too large. Please select up to 365 days.'
-          );
-          err.status = 400;
-          throw err;
-        }
-      }
-
-      // Prevent future dates for toDate
-      const now = new Date();
-      if (toDate && toDate.getTime() > now.getTime()) {
-        toDate = now;
-      }
-
-      filter.createdAt = {};
-      if (fromDate) filter.createdAt.$gte = fromDate;
-      if (toDate) filter.createdAt.$lte = toDate;
-    }
+    // Note: dateFrom/dateTo are NOT applied to godown filtering
+    // They are used in the controller to filter orders/customers/inventory per godown
+    // Godowns themselves should always be returned regardless of date range
 
     // Apply user-specific godown access filtering
     if (userId) {
