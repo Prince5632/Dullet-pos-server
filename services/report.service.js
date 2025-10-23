@@ -26,7 +26,7 @@ exports.getSalesExecutiveReports = async (
     const userMatch = {};
     if (userId) userMatch._id = new mongoose.Types.ObjectId(userId);
     if (department) userMatch.department = department;
-
+    
     // Handle godown access logic
     let godownAccessFilter = {};
     if (
@@ -69,7 +69,6 @@ exports.getSalesExecutiveReports = async (
       }
       godownAccessFilter.godown = specificGodown;
     }
-
     const reports = await User.aggregate([
       { $match: userMatch },
 
@@ -93,7 +92,7 @@ exports.getSalesExecutiveReports = async (
           ...(roleIds.length > 0
             ? {
                 role: {
-                  $in: roleIds.map((id) => new mongoose.Types.ObjectId(id)),
+                  $in: roleIds,
                 },
               }
             : {
@@ -106,7 +105,7 @@ exports.getSalesExecutiveReports = async (
       },
 
       // ✅ Filter users based on godown access when godown filtering is applied
-      ...(Object.keys(godownAccessFilter).length > 0
+      ...(Object.keys(godownAccessFilter).length > 0 && requestingUser?.role?.name!== "Super Admin"
         ? [
             {
               $match: {
