@@ -1474,7 +1474,215 @@ exports.getCustomerPurchaseDetail = async (customerId, filters = {}) => {
 };
 
 /**
- * Generate Excel file for Sales Executive Reports
+ * Helper function to get date-wise order breakdown
+ */
+const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
+  const Order = require("../models/order.schema");
+  const { dateRange, userId, department, godownId, roleIds = [], type } = filters;
+
+  // Build match conditions
+  const matchConditions = {};
+
+  if (type) {
+    matchConditions.type = type;
+  }
+
+  if (dateRange) {
+    matchConditions.orderDate = {};
+    if (dateRange.startDate) matchConditions.orderDate.$gte = new Date(dateRange.startDate);
+    if (dateRange.endDate) matchConditions.orderDate.$lte = new Date(dateRange.endDate);
+  }
+
+  if (userId) {
+    matchConditions.createdBy = new mongoose.Types.ObjectId(userId);
+  }
+
+  if (godownId) {
+    matchConditions.godown = new mongoose.Types.ObjectId(godownId);
+  }
+
+  // Handle godown access filter
+  if (requestingUser && (requestingUser.primaryGodown || requestingUser.accessibleGodowns?.length > 0)) {
+    const allowedGodowns = [
+      ...(requestingUser.primaryGodown ? [requestingUser.primaryGodown._id || requestingUser.primaryGodown] : []),
+      ...(requestingUser.accessibleGodowns?.map((g) => g._id || g) || []),
+    ];
+    if (allowedGodowns.length > 0 && !godownId) {
+      matchConditions.godown = { $in: allowedGodowns.map((id) => new mongoose.Types.ObjectId(id)) };
+    }
+  }
+
+  const pipeline = [
+    { $match: matchConditions },
+    {
+      $lookup: {
+        from: "users",
+        localField: "createdBy",
+        foreignField: "_id",
+        as: "creator",
+      },
+    },
+    { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
+
+    // Combine firstName and lastName into fullName
+    {
+      $addFields: {
+        "creator.fullName": {
+          $trim: {
+            input: {
+              $concat: [
+                { $ifNull: ["$creator.firstName", ""] },
+                " ",
+                { $ifNull: ["$creator.lastName", ""] },
+              ],
+            },
+          },
+        },
+      },
+    },
+  ];
+
+  // Filter by department if specified
+  if (department) {
+    pipeline.push({ $match: { "creator.department": department } });
+  }
+
+  // Filter by roles if specified
+  if (roleIds.length > 0) {
+    pipeline.push({
+      $match: {
+        "creator.role": { $in: roleIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      },
+    });
+  }
+
+  // Group by date and executive
+  pipeline.push(
+    {
+      $group: {
+        _id: {
+          date: { $dateToString: { format: "%Y-%m-%d", date: "$orderDate" } },
+          executiveId: "$createdBy",
+          executiveName: "$creator.fullName", // use combined fullName
+        },
+        orderCount: { $sum: 1 },
+        totalRevenue: { $sum: "$totalAmount" },
+      },
+    },
+    {
+      $sort: { "_id.date": 1, "_id.executiveName": 1 },
+    }
+  );
+
+  const results = await Order.aggregate(pipeline);
+  return results;
+};
+
+/**
+ * Helper function to get month-wise order breakdown
+ */
+const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
+  const Order = require("../models/order.schema");
+  const { dateRange, userId, department, godownId, roleIds = [], type } = filters;
+
+  // Build match conditions
+  const matchConditions = {};
+  
+  if (type) {
+    matchConditions.type = type;
+  }
+  
+  if (dateRange) {
+    matchConditions.orderDate = {};
+    if (dateRange.startDate) matchConditions.orderDate.$gte = dateRange.startDate;
+    if (dateRange.endDate) matchConditions.orderDate.$lte = dateRange.endDate;
+  }
+
+  if (userId) {
+    matchConditions.createdBy = new mongoose.Types.ObjectId(userId);
+  }
+
+  if (godownId) {
+    matchConditions.godown = new mongoose.Types.ObjectId(godownId);
+  }
+
+  // Handle godown access filter
+  if (requestingUser && (requestingUser.primaryGodown || requestingUser.accessibleGodowns?.length > 0)) {
+    const allowedGodowns = [
+      ...(requestingUser.primaryGodown ? [requestingUser.primaryGodown._id || requestingUser.primaryGodown] : []),
+      ...(requestingUser.accessibleGodowns?.map((g) => g._id || g) || []),
+    ];
+    if (allowedGodowns.length > 0 && !godownId) {
+      matchConditions.godown = { $in: allowedGodowns.map((id) => new mongoose.Types.ObjectId(id)) };
+    }
+  }
+
+  const pipeline = [
+    { $match: matchConditions },
+    {
+      $lookup: {
+        from: "users",
+        localField: "createdBy",
+        foreignField: "_id",
+        as: "creator",
+      },
+    },
+    { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
+     // Combine firstName and lastName into fullName
+    {
+      $addFields: {
+        "creator.fullName": {
+          $trim: {
+            input: {
+              $concat: [
+                { $ifNull: ["$creator.firstName", ""] },
+                " ",
+                { $ifNull: ["$creator.lastName", ""] },
+              ],
+            },
+          },
+        },
+      },
+    },
+  ];
+
+  // Filter by department if specified
+  if (department) {
+    pipeline.push({ $match: { "creator.department": department } });
+  }
+
+  // Filter by roles if specified
+  if (roleIds.length > 0) {
+    pipeline.push({
+      $match: {
+        "creator.role": { $in: roleIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      },
+    });
+  }
+
+  pipeline.push(
+    {
+      $group: {
+        _id: {
+          month: { $dateToString: { format: "%Y-%m", date: "$orderDate" } },
+          executiveId: "$createdBy",
+          executiveName: "$creator.fullName",
+        },
+        orderCount: { $sum: 1 },
+        totalRevenue: { $sum: "$totalAmount" },
+      },
+    },
+    {
+      $sort: { "_id.month": 1, "_id.executiveName": 1 },
+    }
+  );
+
+  const results = await Order.aggregate(pipeline);
+  return results;
+};
+
+/**
+ * Generate Excel file for Sales Executive Reports with date-wise and month-wise breakdowns
  */
 exports.generateSalesExecutiveExcel = async (
   filters = {},
@@ -1494,14 +1702,18 @@ exports.generateSalesExecutiveExcel = async (
       requestingUser
     );
 
+    // Get date-wise and month-wise breakdowns
+    const dateWiseData = await getDateWiseOrderBreakdown(filters, requestingUser);
+    const monthWiseData = await getMonthWiseOrderBreakdown(filters, requestingUser);
+
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(
-      type === "visit" ? "Sales Executive Visits" : "Sales Executive Orders"
-    );
+
+    // ========== SHEET 1: Summary Report ==========
+    const summarySheet = workbook.addWorksheet("Summary");
 
     // Define columns based on report type
     if (type === "visit") {
-      worksheet.columns = [
+      summarySheet.columns = [
         { header: "Employee ID", key: "employeeId", width: 15 },
         { header: "Name", key: "executiveName", width: 25 },
         { header: "Department", key: "department", width: 15 },
@@ -1511,7 +1723,7 @@ exports.generateSalesExecutiveExcel = async (
         { header: "Unique Locations", key: "uniqueCustomersCount", width: 18 },
       ];
     } else {
-      worksheet.columns = [
+      summarySheet.columns = [
         { header: "Employee ID", key: "employeeId", width: 15 },
         { header: "Name", key: "executiveName", width: 25 },
         { header: "Department", key: "department", width: 15 },
@@ -1532,14 +1744,14 @@ exports.generateSalesExecutiveExcel = async (
     }
 
     // Style the header row
-    worksheet.getRow(1).font = { bold: true, size: 12 };
-    worksheet.getRow(1).fill = {
+    summarySheet.getRow(1).font = { bold: true, size: 12 };
+    summarySheet.getRow(1).fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { argb: "FF4472C4" },
     };
-    worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
-    worksheet.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+    summarySheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    summarySheet.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
 
     // Add data rows
     if (reportData.reports && reportData.reports.length > 0) {
@@ -1566,19 +1778,19 @@ exports.generateSalesExecutiveExcel = async (
           row.completedOrders = report.completedOrders || 0;
         }
 
-        worksheet.addRow(row);
+        summarySheet.addRow(row);
       });
 
       // Format currency columns for orders report
       if (type !== "visit") {
-        worksheet.getColumn("totalRevenue").numFmt = '₹#,##0.00';
-        worksheet.getColumn("totalPaidAmount").numFmt = '₹#,##0.00';
-        worksheet.getColumn("totalOutstanding").numFmt = '₹#,##0.00';
-        worksheet.getColumn("avgOrderValue").numFmt = '₹#,##0.00';
+        summarySheet.getColumn("totalRevenue").numFmt = '₹#,##0.00';
+        summarySheet.getColumn("totalPaidAmount").numFmt = '₹#,##0.00';
+        summarySheet.getColumn("totalOutstanding").numFmt = '₹#,##0.00';
+        summarySheet.getColumn("avgOrderValue").numFmt = '₹#,##0.00';
       }
 
       // Add borders to all cells
-      worksheet.eachRow((row, rowNumber) => {
+      summarySheet.eachRow((row, rowNumber) => {
         row.eachCell((cell) => {
           cell.border = {
             top: { style: "thin" },
@@ -1591,24 +1803,24 @@ exports.generateSalesExecutiveExcel = async (
 
       // Add summary row at the bottom for orders report
       if (type !== "visit" && reportData.summary) {
-        const summaryRowNumber = worksheet.rowCount + 2;
-        worksheet.getCell(`A${summaryRowNumber}`).value = "SUMMARY";
-        worksheet.getCell(`A${summaryRowNumber}`).font = { bold: true, size: 12 };
-        worksheet.getCell(`A${summaryRowNumber}`).fill = {
+        const summaryRowNumber = summarySheet.rowCount + 2;
+        summarySheet.getCell(`A${summaryRowNumber}`).value = "SUMMARY";
+        summarySheet.getCell(`A${summaryRowNumber}`).font = { bold: true, size: 12 };
+        summarySheet.getCell(`A${summaryRowNumber}`).fill = {
           type: "pattern",
           pattern: "solid",
           fgColor: { argb: "FFE7E6E6" },
         };
 
-        worksheet.getCell(`F${summaryRowNumber}`).value = reportData.summary.totalOrdersAll || 0;
-        worksheet.getCell(`G${summaryRowNumber}`).value = reportData.summary.totalRevenueAll || 0;
-        worksheet.getCell(`G${summaryRowNumber}`).numFmt = '₹#,##0.00';
-        worksheet.getCell(`J${summaryRowNumber}`).value = reportData.summary.avgOrderValueAll || 0;
-        worksheet.getCell(`J${summaryRowNumber}`).numFmt = '₹#,##0.00';
+        summarySheet.getCell(`F${summaryRowNumber}`).value = reportData.summary.totalOrdersAll || 0;
+        summarySheet.getCell(`G${summaryRowNumber}`).value = reportData.summary.totalRevenueAll || 0;
+        summarySheet.getCell(`G${summaryRowNumber}`).numFmt = '₹#,##0.00';
+        summarySheet.getCell(`J${summaryRowNumber}`).value = reportData.summary.avgOrderValueAll || 0;
+        summarySheet.getCell(`J${summaryRowNumber}`).numFmt = '₹#,##0.00';
 
         // Style summary row
-        for (let col = 1; col <= worksheet.columnCount; col++) {
-          const cell = worksheet.getCell(summaryRowNumber, col);
+        for (let col = 1; col <= summarySheet.columnCount; col++) {
+          const cell = summarySheet.getCell(summaryRowNumber, col);
           cell.font = { bold: true };
           cell.fill = {
             type: "pattern",
@@ -1624,6 +1836,110 @@ exports.generateSalesExecutiveExcel = async (
         }
       }
     }
+
+    // ========== SHEET 2: Date-wise Breakdown ==========
+    const dateWiseSheet = workbook.addWorksheet("Date-wise Breakdown");
+    
+    dateWiseSheet.columns = [
+      { header: "Date", key: "date", width: 15 },
+      { header: "Sales Executive", key: "executiveName", width: 25 },
+      { header: type === "visit" ? "Visit Count" : "Order Count", key: "orderCount", width: 15 },
+    ];
+
+    if (type !== "visit") {
+      dateWiseSheet.columns.push({ header: "Total Revenue", key: "totalRevenue", width: 18 });
+    }
+
+    // Style header
+    dateWiseSheet.getRow(1).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
+    dateWiseSheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF70AD47" },
+    };
+    dateWiseSheet.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+
+    // Add date-wise data
+    dateWiseData.forEach((item) => {
+      const row = {
+        date: item._id.date,
+        executiveName: item._id.executiveName || "Unknown",
+        orderCount: item.orderCount,
+      };
+      if (type !== "visit") {
+        row.totalRevenue = item.totalRevenue || 0;
+      }
+      dateWiseSheet.addRow(row);
+    });
+
+    // Format currency column
+    if (type !== "visit") {
+      dateWiseSheet.getColumn("totalRevenue").numFmt = '₹#,##0.00';
+    }
+
+    // Add borders
+    dateWiseSheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+      });
+    });
+
+    // ========== SHEET 3: Month-wise Breakdown ==========
+    const monthWiseSheet = workbook.addWorksheet("Month-wise Breakdown");
+    
+    monthWiseSheet.columns = [
+      { header: "Month", key: "month", width: 15 },
+      { header: "Sales Executive", key: "executiveName", width: 25 },
+      { header: type === "visit" ? "Visit Count" : "Order Count", key: "orderCount", width: 15 },
+    ];
+
+    if (type !== "visit") {
+      monthWiseSheet.columns.push({ header: "Total Revenue", key: "totalRevenue", width: 18 });
+    }
+
+    // Style header
+    monthWiseSheet.getRow(1).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
+    monthWiseSheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFFC000" },
+    };
+    monthWiseSheet.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+
+    // Add month-wise data
+    monthWiseData.forEach((item) => {
+      const row = {
+        month: item._id.month,
+        executiveName: item._id.executiveName || "Unknown",
+        orderCount: item.orderCount,
+      };
+      if (type !== "visit") {
+        row.totalRevenue = item.totalRevenue || 0;
+      }
+      monthWiseSheet.addRow(row);
+    });
+
+    // Format currency column
+    if (type !== "visit") {
+      monthWiseSheet.getColumn("totalRevenue").numFmt = '₹#,##0.00';
+    }
+
+    // Add borders
+    monthWiseSheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+      });
+    });
 
     // Generate buffer
     const buffer = await workbook.xlsx.writeBuffer();
