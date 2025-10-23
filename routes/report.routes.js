@@ -7,6 +7,7 @@ const { authenticate } = require('../middlewares/auth.middleware');
 router.use(authenticate);
 
 // Sales Executive Reports
+router.get('/sales-executives/export/excel', reportController.exportSalesExecutiveReportsToExcel);
 router.get('/sales-executives', reportController.getSalesExecutiveReports);
 router.get('/sales-executives/:userId', reportController.getExecutivePerformanceDetail);
 

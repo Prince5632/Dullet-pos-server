@@ -289,4 +289,87 @@ exports.getCustomerPurchaseDetail = async (req, res) => {
   }
 };
 
+/**
+ * Export Sales Executive Reports to Excel
+ * @route GET /api/reports/sales-executives/export/excel
+ */
+exports.exportSalesExecutiveReportsToExcel = async (req, res) => {
+  try {
+    const {
+      startDate,
+      endDate,
+      userId,
+      sortBy = "totalRevenue",
+      sortOrder = "desc",
+      department,
+      godownId,
+      userActivityFilter,
+      type = "order",
+    } = req.query;
+    
+    let roleIds = req.query['roleIds[]'] || [];
+    roleIds = Array.isArray(roleIds) ? roleIds : [roleIds];
+    roleIds = roleIds.map((id) => new mongoose.Types.ObjectId(id));
+    
+    const filters = {};
+    if (startDate || endDate) {
+      filters.dateRange = {};
+
+      if (startDate) {
+        const dateFrom = new Date(startDate);
+        dateFrom.setHours(0, 0, 0, 0);
+        filters.dateRange.startDate = dateFrom;
+      }
+      if (endDate) {
+        const dateTo = new Date(endDate);
+        dateTo.setHours(23, 59, 59, 999);
+        filters.dateRange.endDate = dateTo;
+      }
+    }
+    if (userId) {
+      filters.userId = userId;
+    }
+    if (roleIds?.length > 0) {
+      filters.roleIds = roleIds;
+    }
+    if (department) {
+      filters.department = department;
+    }
+    if (godownId) {
+      filters.godownId = godownId;
+    }
+    if (type) {
+      filters.type = type;
+    }
+    if (userActivityFilter && userActivityFilter !== "all") {
+      filters.userActivityFilter = userActivityFilter;
+    }
+
+    // Generate Excel file
+    const excelBuffer = await reportService.generateSalesExecutiveExcel(
+      filters,
+      sortBy,
+      sortOrder,
+      req.user,
+      type
+    );
+
+    // Set response headers for file download
+    const reportTypeLabel = type === "visit" ? "visits" : "orders";
+    const filename = `sales-executive-${reportTypeLabel}-reports-${new Date().toISOString().split("T")[0]}.xlsx`;
+    
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", excelBuffer.length);
+
+    return res.send(excelBuffer);
+  } catch (error) {
+    console.error("Error exporting sales executive reports to Excel:", error);
+    return sendError(res, error.message, 500);
+  }
+};
+
 

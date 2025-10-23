@@ -1472,3 +1472,163 @@ exports.getCustomerPurchaseDetail = async (customerId, filters = {}) => {
     throw new Error(`Failed to get customer purchase detail: ${error.message}`);
   }
 };
+
+/**
+ * Generate Excel file for Sales Executive Reports
+ */
+exports.generateSalesExecutiveExcel = async (
+  filters = {},
+  sortBy = "totalRevenue",
+  sortOrder = "desc",
+  requestingUser = null,
+  type = "order"
+) => {
+  try {
+    const ExcelJS = require("exceljs");
+
+    // Get the report data
+    const reportData = await exports.getSalesExecutiveReports(
+      filters,
+      sortBy,
+      sortOrder,
+      requestingUser
+    );
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(
+      type === "visit" ? "Sales Executive Visits" : "Sales Executive Orders"
+    );
+
+    // Define columns based on report type
+    if (type === "visit") {
+      worksheet.columns = [
+        { header: "Employee ID", key: "employeeId", width: 15 },
+        { header: "Name", key: "executiveName", width: 25 },
+        { header: "Department", key: "department", width: 15 },
+        { header: "Position", key: "position", width: 20 },
+        { header: "Role", key: "roleName", width: 20 },
+        { header: "Total Visits", key: "totalOrders", width: 15 },
+        { header: "Unique Locations", key: "uniqueCustomersCount", width: 18 },
+      ];
+    } else {
+      worksheet.columns = [
+        { header: "Employee ID", key: "employeeId", width: 15 },
+        { header: "Name", key: "executiveName", width: 25 },
+        { header: "Department", key: "department", width: 15 },
+        { header: "Position", key: "position", width: 20 },
+        { header: "Role", key: "roleName", width: 20 },
+        { header: "Total Orders", key: "totalOrders", width: 15 },
+        { header: "Total Revenue", key: "totalRevenue", width: 18 },
+        { header: "Total Paid", key: "totalPaidAmount", width: 15 },
+        { header: "Outstanding", key: "totalOutstanding", width: 15 },
+        { header: "Avg Order Value", key: "avgOrderValue", width: 18 },
+        { header: "Unique Customers", key: "uniqueCustomersCount", width: 18 },
+        { header: "Conversion Rate", key: "conversionRate", width: 18 },
+        { header: "Pending", key: "pendingOrders", width: 12 },
+        { header: "Approved", key: "approvedOrders", width: 12 },
+        { header: "Delivered", key: "deliveredOrders", width: 12 },
+        { header: "Completed", key: "completedOrders", width: 12 },
+      ];
+    }
+
+    // Style the header row
+    worksheet.getRow(1).font = { bold: true, size: 12 };
+    worksheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF4472C4" },
+    };
+    worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    worksheet.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+
+    // Add data rows
+    if (reportData.reports && reportData.reports.length > 0) {
+      reportData.reports.forEach((report) => {
+        const row = {
+          employeeId: report.employeeId || "",
+          executiveName: report.executiveName || "",
+          department: report.department || "",
+          position: report.position || "",
+          roleName: report.roleName || "",
+          totalOrders: report.totalOrders || 0,
+          uniqueCustomersCount: report.uniqueCustomersCount || 0,
+        };
+
+        if (type !== "visit") {
+          row.totalRevenue = report.totalRevenue || 0;
+          row.totalPaidAmount = report.totalPaidAmount || 0;
+          row.totalOutstanding = report.totalOutstanding || 0;
+          row.avgOrderValue = report.avgOrderValue || 0;
+          row.conversionRate = `${report.conversionRate || 0}%`;
+          row.pendingOrders = report.pendingOrders || 0;
+          row.approvedOrders = report.approvedOrders || 0;
+          row.deliveredOrders = report.deliveredOrders || 0;
+          row.completedOrders = report.completedOrders || 0;
+        }
+
+        worksheet.addRow(row);
+      });
+
+      // Format currency columns for orders report
+      if (type !== "visit") {
+        worksheet.getColumn("totalRevenue").numFmt = '₹#,##0.00';
+        worksheet.getColumn("totalPaidAmount").numFmt = '₹#,##0.00';
+        worksheet.getColumn("totalOutstanding").numFmt = '₹#,##0.00';
+        worksheet.getColumn("avgOrderValue").numFmt = '₹#,##0.00';
+      }
+
+      // Add borders to all cells
+      worksheet.eachRow((row, rowNumber) => {
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        });
+      });
+
+      // Add summary row at the bottom for orders report
+      if (type !== "visit" && reportData.summary) {
+        const summaryRowNumber = worksheet.rowCount + 2;
+        worksheet.getCell(`A${summaryRowNumber}`).value = "SUMMARY";
+        worksheet.getCell(`A${summaryRowNumber}`).font = { bold: true, size: 12 };
+        worksheet.getCell(`A${summaryRowNumber}`).fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFE7E6E6" },
+        };
+
+        worksheet.getCell(`F${summaryRowNumber}`).value = reportData.summary.totalOrdersAll || 0;
+        worksheet.getCell(`G${summaryRowNumber}`).value = reportData.summary.totalRevenueAll || 0;
+        worksheet.getCell(`G${summaryRowNumber}`).numFmt = '₹#,##0.00';
+        worksheet.getCell(`J${summaryRowNumber}`).value = reportData.summary.avgOrderValueAll || 0;
+        worksheet.getCell(`J${summaryRowNumber}`).numFmt = '₹#,##0.00';
+
+        // Style summary row
+        for (let col = 1; col <= worksheet.columnCount; col++) {
+          const cell = worksheet.getCell(summaryRowNumber, col);
+          cell.font = { bold: true };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFE7E6E6" },
+          };
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        }
+      }
+    }
+
+    // Generate buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    return buffer;
+  } catch (error) {
+    throw new Error(`Failed to generate Excel file: ${error.message}`);
+  }
+};
