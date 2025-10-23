@@ -331,6 +331,7 @@ exports.getSalesExecutiveReports = async (
           approvedOrders: 1,
           deliveredOrders: 1,
           completedOrders: 1,
+           roleName: "$roleData.name", // ✅ Add role name here
           uniqueCustomersCount: 1,
           conversionRate: 1,
           lastActivityDate: 1,
@@ -1564,9 +1565,35 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
           date: { $dateToString: { format: "%Y-%m-%d", date: "$orderDate" } },
           executiveId: "$createdBy",
           executiveName: "$creator.fullName", // use combined fullName
+          employeeId: "$creator.employeeId",
+          department: "$creator.department",
+          position: "$creator.position",
         },
         orderCount: { $sum: 1 },
         totalRevenue: { $sum: "$totalAmount" },
+        roleName: { $first: "$creator.role" }, // Store role reference
+      },
+    },
+    {
+      $lookup: {
+        from: "roles",
+        localField: "roleName",
+        foreignField: "_id",
+        as: "roleData",
+      },
+    },
+    {
+      $unwind: {
+        path: "$roleData",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        orderCount: 1,
+        totalRevenue: 1,
+        roleName: { $ifNull: ["$roleData.name", "N/A"] },
       },
     },
     {
@@ -1667,9 +1694,35 @@ const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
           month: { $dateToString: { format: "%Y-%m", date: "$orderDate" } },
           executiveId: "$createdBy",
           executiveName: "$creator.fullName",
+          employeeId: "$creator.employeeId",
+          department: "$creator.department",
+          position: "$creator.position",
         },
         orderCount: { $sum: 1 },
         totalRevenue: { $sum: "$totalAmount" },
+        roleName: { $first: "$creator.role" }, // Store role reference
+      },
+    },
+    {
+      $lookup: {
+        from: "roles",
+        localField: "roleName",
+        foreignField: "_id",
+        as: "roleData",
+      },
+    },
+    {
+      $unwind: {
+        path: "$roleData",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        orderCount: 1,
+        totalRevenue: 1,
+        roleName: { $ifNull: ["$roleData.name", "N/A"] },
       },
     },
     {
@@ -1701,7 +1754,6 @@ exports.generateSalesExecutiveExcel = async (
       sortOrder,
       requestingUser
     );
-
     // Get date-wise and month-wise breakdowns
     const dateWiseData = await getDateWiseOrderBreakdown(filters, requestingUser);
     const monthWiseData = await getMonthWiseOrderBreakdown(filters, requestingUser);
@@ -1801,6 +1853,14 @@ exports.generateSalesExecutiveExcel = async (
         });
       });
 
+      // Add auto-filter to summary sheet
+      if (reportData.reports.length > 0) {
+        summarySheet.autoFilter = {
+          from: { row: 1, column: 1 },
+          to: { row: 1, column: summarySheet.columnCount },
+        };
+      }
+
       // Add summary row at the bottom for orders report
       if (type !== "visit" && reportData.summary) {
         const summaryRowNumber = summarySheet.rowCount + 2;
@@ -1840,15 +1900,22 @@ exports.generateSalesExecutiveExcel = async (
     // ========== SHEET 2: Date-wise Breakdown ==========
     const dateWiseSheet = workbook.addWorksheet("Date-wise Breakdown");
     
-    dateWiseSheet.columns = [
+    // Define columns based on report type
+    const dateWiseColumns = [
       { header: "Date", key: "date", width: 15 },
+      { header: "Employee ID", key: "employeeId", width: 15 },
       { header: "Sales Executive", key: "executiveName", width: 25 },
+      { header: "Department", key: "department", width: 15 },
+      { header: "Position", key: "position", width: 20 },
+      { header: "Role", key: "roleName", width: 20 },
       { header: type === "visit" ? "Visit Count" : "Order Count", key: "orderCount", width: 15 },
     ];
 
     if (type !== "visit") {
-      dateWiseSheet.columns.push({ header: "Total Revenue", key: "totalRevenue", width: 18 });
+      dateWiseColumns.push({ header: "Total Revenue", key: "totalRevenue", width: 18 });
     }
+
+    dateWiseSheet.columns = dateWiseColumns;
 
     // Style header
     dateWiseSheet.getRow(1).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
@@ -1863,7 +1930,11 @@ exports.generateSalesExecutiveExcel = async (
     dateWiseData.forEach((item) => {
       const row = {
         date: item._id.date,
+        employeeId: item._id.employeeId || "",
         executiveName: item._id.executiveName || "Unknown",
+        department: item._id.department || "",
+        position: item._id.position || "",
+        roleName: item.roleName || "N/A",
         orderCount: item.orderCount,
       };
       if (type !== "visit") {
@@ -1889,18 +1960,33 @@ exports.generateSalesExecutiveExcel = async (
       });
     });
 
+    // Add auto-filter to date-wise sheet
+    if (dateWiseData.length > 0) {
+      dateWiseSheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: dateWiseSheet.columnCount },
+      };
+    }
+
     // ========== SHEET 3: Month-wise Breakdown ==========
     const monthWiseSheet = workbook.addWorksheet("Month-wise Breakdown");
     
-    monthWiseSheet.columns = [
+    // Define columns based on report type
+    const monthWiseColumns = [
       { header: "Month", key: "month", width: 15 },
+      { header: "Employee ID", key: "employeeId", width: 15 },
       { header: "Sales Executive", key: "executiveName", width: 25 },
+      { header: "Department", key: "department", width: 15 },
+      { header: "Position", key: "position", width: 20 },
+      { header: "Role", key: "roleName", width: 20 },
       { header: type === "visit" ? "Visit Count" : "Order Count", key: "orderCount", width: 15 },
     ];
 
     if (type !== "visit") {
-      monthWiseSheet.columns.push({ header: "Total Revenue", key: "totalRevenue", width: 18 });
+      monthWiseColumns.push({ header: "Total Revenue", key: "totalRevenue", width: 18 });
     }
+
+    monthWiseSheet.columns = monthWiseColumns;
 
     // Style header
     monthWiseSheet.getRow(1).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
@@ -1915,7 +2001,11 @@ exports.generateSalesExecutiveExcel = async (
     monthWiseData.forEach((item) => {
       const row = {
         month: item._id.month,
+        employeeId: item._id.employeeId || "",
         executiveName: item._id.executiveName || "Unknown",
+        department: item._id.department || "",
+        position: item._id.position || "",
+        roleName: item.roleName || "N/A",
         orderCount: item.orderCount,
       };
       if (type !== "visit") {
@@ -1940,6 +2030,14 @@ exports.generateSalesExecutiveExcel = async (
         };
       });
     });
+
+    // Add auto-filter to month-wise sheet
+    if (monthWiseData.length > 0) {
+      monthWiseSheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: monthWiseSheet.columnCount },
+      };
+    }
 
     // Generate buffer
     const buffer = await workbook.xlsx.writeBuffer();
