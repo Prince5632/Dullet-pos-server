@@ -1548,11 +1548,38 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
     pipeline.push({ $match: { "creator.department": department } });
   }
 
-  // Filter by roles if specified
+  // Lookup role data before filtering
+  pipeline.push(
+    {
+      $lookup: {
+        from: "roles",
+        localField: "creator.role",
+        foreignField: "_id",
+        as: "creatorRoleData",
+      },
+    },
+    {
+      $unwind: {
+        path: "$creatorRoleData",
+        preserveNullAndEmptyArrays: true,
+      },
+    }
+  );
+
+  // Filter by roles - if roleIds provided, use them; otherwise default to Manager or Sales Executive
   if (roleIds.length > 0) {
     pipeline.push({
       $match: {
-        "creator.role": { $in: roleIds.map((id) => new mongoose.Types.ObjectId(id)) },
+        "creator.role": { $in: roleIds }, // roleIds are already ObjectIds from controller
+      },
+    });
+  } else {
+    pipeline.push({
+      $match: {
+        $or: [
+          { "creatorRoleData.name": "Sales Executive" },
+          { "creatorRoleData.name": "Manager" },
+        ],
       },
     });
   }
@@ -1571,21 +1598,7 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
         },
         orderCount: { $sum: 1 },
         totalRevenue: { $sum: "$totalAmount" },
-        roleName: { $first: "$creator.role" }, // Store role reference
-      },
-    },
-    {
-      $lookup: {
-        from: "roles",
-        localField: "roleName",
-        foreignField: "_id",
-        as: "roleData",
-      },
-    },
-    {
-      $unwind: {
-        path: "$roleData",
-        preserveNullAndEmptyArrays: true,
+        roleName: { $first: "$creatorRoleData.name" }, // Use already fetched role name
       },
     },
     {
@@ -1593,7 +1606,7 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
         _id: 1,
         orderCount: 1,
         totalRevenue: 1,
-        roleName: { $ifNull: ["$roleData.name", "N/A"] },
+        roleName: { $ifNull: ["$roleName", "N/A"] },
       },
     },
     {
@@ -1678,15 +1691,43 @@ const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
     pipeline.push({ $match: { "creator.department": department } });
   }
 
-  // Filter by roles if specified
+  // Lookup role data before filtering
+  pipeline.push(
+    {
+      $lookup: {
+        from: "roles",
+        localField: "creator.role",
+        foreignField: "_id",
+        as: "creatorRoleData",
+      },
+    },
+    {
+      $unwind: {
+        path: "$creatorRoleData",
+        preserveNullAndEmptyArrays: true,
+      },
+    }
+  );
+
+  // Filter by roles - if roleIds provided, use them; otherwise default to Manager or Sales Executive
   if (roleIds.length > 0) {
     pipeline.push({
       $match: {
-        "creator.role": { $in: roleIds.map((id) => new mongoose.Types.ObjectId(id)) },
+        "creator.role": { $in: roleIds }, // roleIds are already ObjectIds from controller
+      },
+    });
+  } else {
+    pipeline.push({
+      $match: {
+        $or: [
+          { "creatorRoleData.name": "Sales Executive" },
+          { "creatorRoleData.name": "Manager" },
+        ],
       },
     });
   }
 
+  // Group by month and executive
   pipeline.push(
     {
       $group: {
@@ -1700,21 +1741,7 @@ const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
         },
         orderCount: { $sum: 1 },
         totalRevenue: { $sum: "$totalAmount" },
-        roleName: { $first: "$creator.role" }, // Store role reference
-      },
-    },
-    {
-      $lookup: {
-        from: "roles",
-        localField: "roleName",
-        foreignField: "_id",
-        as: "roleData",
-      },
-    },
-    {
-      $unwind: {
-        path: "$roleData",
-        preserveNullAndEmptyArrays: true,
+        roleName: { $first: "$creatorRoleData.name" }, // Use already fetched role name
       },
     },
     {
@@ -1722,7 +1749,7 @@ const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
         _id: 1,
         orderCount: 1,
         totalRevenue: 1,
-        roleName: { $ifNull: ["$roleData.name", "N/A"] },
+        roleName: { $ifNull: ["$roleName", "N/A"] },
       },
     },
     {
