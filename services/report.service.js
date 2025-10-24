@@ -22,12 +22,12 @@ exports.getSalesExecutiveReports = async (
       type,
       userActivityFilter,
     } = filters;
-    // Match base user filters
+
     const userMatch = {};
     if (userId) userMatch._id = new mongoose.Types.ObjectId(userId);
     if (department) userMatch.department = department;
-    
-    // Handle godown access logic
+
+    // ✅ Godown Access Logic
     let godownAccessFilter = {};
     if (
       requestingUser &&
@@ -40,6 +40,7 @@ exports.getSalesExecutiveReports = async (
           : []),
         ...(requestingUser.accessibleGodowns?.map((g) => g._id || g) || []),
       ];
+
       if (allowedGodowns.length > 0) {
         godownAccessFilter.godown = {
           $in: allowedGodowns.map((id) => new mongoose.Types.ObjectId(id)),
@@ -56,7 +57,7 @@ exports.getSalesExecutiveReports = async (
         if (!isAllowed) {
           return {
             summary: {
-              totalSalesExecutives: 0,
+              totalExecutives: 0,
               totalOrdersAll: 0,
               totalRevenueAll: 0,
               totalOutstandingAll: 0,
@@ -69,10 +70,11 @@ exports.getSalesExecutiveReports = async (
       }
       godownAccessFilter.godown = specificGodown;
     }
+
     const reports = await User.aggregate([
       { $match: userMatch },
 
-      // ✅ Include role info
+      // ✅ Lookup Role
       {
         $lookup: {
           from: "roles",
@@ -90,11 +92,7 @@ exports.getSalesExecutiveReports = async (
       {
         $match: {
           ...(roleIds.length > 0
-            ? {
-                role: {
-                  $in: roleIds,
-                },
-              }
+            ? { role: { $in: roleIds } }
             : {
                 $or: [
                   { "roleData.name": "Sales Executive" },
@@ -104,33 +102,22 @@ exports.getSalesExecutiveReports = async (
         },
       },
 
-      // ✅ Filter users based on godown access when godown filtering is applied
-      ...(Object.keys(godownAccessFilter).length > 0 && requestingUser?.role?.name!== "Super Admin"
+      // ✅ Godown-based access filtering for Users
+      ...(Object.keys(godownAccessFilter).length > 0 &&
+      requestingUser?.role?.name !== "Super Admin"
         ? [
             {
               $match: {
                 $or: [
-                  {
-                    primaryGodown: {
-                      $in: godownAccessFilter.godown.$in || [
-                        godownAccessFilter.godown,
-                      ],
-                    },
-                  },
-                  {
-                    accessibleGodowns: {
-                      $in: godownAccessFilter.godown.$in || [
-                        godownAccessFilter.godown,
-                      ],
-                    },
-                  },
+                  { primaryGodown: { $in: godownAccessFilter.godown.$in || [godownAccessFilter.godown] } },
+                  { accessibleGodowns: { $in: godownAccessFilter.godown.$in || [godownAccessFilter.godown] } },
                 ],
               },
             },
           ]
         : []),
 
-      // ✅ Lookup their orders (even if none)
+      // ✅ Optimized Order Aggregation — No arrays returned
       {
         $lookup: {
           from: "orders",
@@ -141,139 +128,100 @@ exports.getSalesExecutiveReports = async (
                 $expr: { $eq: ["$createdBy", "$$userId"] },
                 type: type || "order",
                 status: { $nin: ["cancelled", "rejected"] },
-                ...(Object.keys(godownAccessFilter).length > 0
-                  ? godownAccessFilter
+                ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {}),
+                ...(dateRange && (dateRange.startDate || dateRange.endDate)
+                  ? {
+                      orderDate: {
+                        ...(dateRange.startDate ? { $gte: dateRange.startDate } : {}),
+                        ...(dateRange.endDate ? { $lte: dateRange.endDate } : {}),
+                      },
+                    }
                   : {}),
               },
             },
-            ...(dateRange && (dateRange.startDate || dateRange.endDate)
-              ? [
-                  {
-                    $match: {
-                      orderDate: {
-                        ...(dateRange.startDate
-                          ? { $gte: dateRange.startDate }
-                          : {}),
-                        ...(dateRange.endDate
-                          ? { $lte: dateRange.endDate }
-                          : {}),
-                      },
-                    },
-                  },
-                ]
-              : []),
+            {
+              $group: {
+                _id: null,
+                totalOrders: { $sum: 1 },
+                totalRevenue: { $sum: "$totalAmount" },
+                totalPaidAmount: { $sum: "$paidAmount" },
+                pendingOrders: {
+                  $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+                },
+                approvedOrders: {
+                  $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] },
+                },
+                deliveredOrders: {
+                  $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] },
+                },
+                completedOrders: {
+                  $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
+                },
+                uniqueCustomers: { $addToSet: "$customer" },
+                lastActivityDate: { $max: "$orderDate" },
+              },
+            },
           ],
-          as: "orders",
+          as: "orderStats",
         },
       },
 
-      // ✅ Compute all required stats
       {
         $addFields: {
-          totalOrders: { $size: { $ifNull: ["$orders", []] } },
-          totalRevenue: { $sum: "$orders.totalAmount" },
-          totalPaidAmount: { $sum: "$orders.paidAmount" },
+          stats: { $arrayElemAt: ["$orderStats", 0] },
+        },
+      },
+
+      // ✅ Final Computed Fields
+      {
+        $addFields: {
+          totalOrders: { $ifNull: ["$stats.totalOrders", 0] },
+          totalRevenue: { $round: [{ $ifNull: ["$stats.totalRevenue", 0] }, 2] },
+          totalPaidAmount: { $round: [{ $ifNull: ["$stats.totalPaidAmount", 0] }, 2] },
           totalOutstanding: {
-            $subtract: [
-              { $ifNull: [{ $sum: "$orders.totalAmount" }, 0] },
-              { $ifNull: [{ $sum: "$orders.paidAmount" }, 0] },
-            ],
-          },
-          avgOrderValue: {
-            $cond: [
-              { $gt: [{ $size: "$orders" }, 0] },
-              { $avg: "$orders.totalAmount" },
-              0,
-            ],
-          },
-          pendingOrders: {
-            $size: {
-              $filter: {
-                input: "$orders",
-                as: "o",
-                cond: { $eq: ["$$o.status", "pending"] },
-              },
-            },
-          },
-          approvedOrders: {
-            $size: {
-              $filter: {
-                input: "$orders",
-                as: "o",
-                cond: { $eq: ["$$o.status", "approved"] },
-              },
-            },
-          },
-          deliveredOrders: {
-            $size: {
-              $filter: {
-                input: "$orders",
-                as: "o",
-                cond: { $eq: ["$$o.status", "delivered"] },
-              },
-            },
-          },
-          completedOrders: {
-            $size: {
-              $filter: {
-                input: "$orders",
-                as: "o",
-                cond: { $eq: ["$$o.status", "completed"] },
-              },
-            },
-          },
-          uniqueCustomersCount: {
-            $size: {
-              $setUnion: {
-                $map: { input: "$orders", as: "order", in: "$$order.customer" },
-              },
-            },
-          },
-          conversionRate: {
             $round: [
               {
-                $multiply: [
-                  {
-                    $cond: [
-                      { $eq: [{ $size: "$orders" }, 0] },
-                      0,
-                      {
-                        $divide: [
-                          {
-                            $size: {
-                              $filter: {
-                                input: "$orders",
-                                as: "o",
-                                cond: { $eq: ["$$o.status", "completed"] },
-                              },
-                            },
-                          },
-                          { $size: "$orders" },
-                        ],
-                      },
-                    ],
-                  },
-                  100,
+                $subtract: [
+                  { $ifNull: ["$stats.totalRevenue", 0] },
+                  { $ifNull: ["$stats.totalPaidAmount", 0] },
                 ],
               },
               2,
             ],
           },
-          lastActivityDate: {
+          avgOrderValue: {
             $cond: [
-              { $gt: [{ $size: "$orders" }, 0] },
-              { $max: "$orders.orderDate" },
-              null,
-            ],
-          },
-          daysSinceLastActivity: {
-            $cond: [
-              { $gt: [{ $size: "$orders" }, 0] },
+              { $gt: [{ $ifNull: ["$stats.totalOrders", 0] }, 0] },
               {
                 $round: [
                   {
                     $divide: [
-                      { $subtract: [new Date(), { $max: "$orders.orderDate" }] },
+                      { $ifNull: ["$stats.totalRevenue", 0] },
+                      { $ifNull: ["$stats.totalOrders", 0] },
+                    ],
+                  },
+                  2,
+                ],
+              },
+              0,
+            ],
+          },
+          pendingOrders: { $ifNull: ["$stats.pendingOrders", 0] },
+          approvedOrders: { $ifNull: ["$stats.approvedOrders", 0] },
+          deliveredOrders: { $ifNull: ["$stats.deliveredOrders", 0] },
+          completedOrders: { $ifNull: ["$stats.completedOrders", 0] },
+          uniqueCustomersCount: {
+            $size: { $ifNull: ["$stats.uniqueCustomers", []] },
+          },
+          lastActivityDate: "$stats.lastActivityDate",
+          daysSinceLastActivity: {
+            $cond: [
+              { $gt: ["$stats.lastActivityDate", null] },
+              {
+                $round: [
+                  {
+                    $divide: [
+                      { $subtract: [new Date(), "$stats.lastActivityDate"] },
                       1000 * 60 * 60 * 24,
                     ],
                   },
@@ -283,21 +231,12 @@ exports.getSalesExecutiveReports = async (
               null,
             ],
           },
-          daysSinceUserCreation: {
-            $round: [
-              {
-                $divide: [
-                  { $subtract: [new Date(), "$createdAt"] },
-                  1000 * 60 * 60 * 24,
-                ],
-              },
-              0,
-            ],
-          },
+          roleName: "$roleData.name",
+          executiveName: { $concat: ["$firstName", " ", "$lastName"] },
         },
       },
 
-      // ✅ Filter by user activity if specified
+      // ✅ Filter by user activity (after stats calculated)
       ...(userActivityFilter
         ? [
             {
@@ -314,48 +253,26 @@ exports.getSalesExecutiveReports = async (
 
       {
         $project: {
-          _id: 1,
-          executiveName: { $concat: ["$firstName", " ", "$lastName"] },
-          employeeId: 1,
-          email: 1,
-          phone: 1,
-          department: 1,
-          position: 1,
-          totalOrders: 1,
-          totalRevenue: { $round: ["$totalRevenue", 2] },
-          totalPaidAmount: { $round: ["$totalPaidAmount", 2] },
-          totalOutstanding: { $round: ["$totalOutstanding", 2] },
-          avgOrderValue: { $round: ["$avgOrderValue", 2] },
-          pendingOrders: 1,
-          approvedOrders: 1,
-          deliveredOrders: 1,
-          completedOrders: 1,
-           roleName: "$roleData.name", // ✅ Add role name here
-          uniqueCustomersCount: 1,
-          conversionRate: 1,
-          lastActivityDate: 1,
-          daysSinceLastActivity: 1,
-          daysSinceUserCreation: 1,
+          orderStats: 0,
+          stats: 0,
         },
       },
 
       { $sort: { [sortBy]: sortOrder === "desc" ? -1 : 1 } },
     ]);
 
+    // ✅ Summary calculation (much faster now)
     const summary = {
       totalExecutives: reports.length,
-      totalOrdersAll: reports.reduce((sum, r) => sum + (r.totalOrders || 0), 0),
-      totalRevenueAll: reports.reduce(
-        (sum, r) => sum + (r.totalRevenue || 0),
-        0
-      ),
+      totalOrdersAll: reports.reduce((sum, r) => sum + r.totalOrders, 0),
+      totalRevenueAll: reports.reduce((sum, r) => sum + r.totalRevenue, 0),
       totalOutstandingAll: reports.reduce(
-        (sum, r) => sum + (r.totalOutstanding || 0),
+        (sum, r) => sum + r.totalOutstanding,
         0
       ),
       avgOrderValueAll:
         reports.length > 0
-          ? reports.reduce((sum, r) => sum + (r.avgOrderValue || 0), 0) /
+          ? reports.reduce((sum, r) => sum + r.avgOrderValue, 0) /
             reports.length
           : 0,
     };
@@ -367,6 +284,7 @@ exports.getSalesExecutiveReports = async (
     );
   }
 };
+
 
 /**
  * Get Godown-wise Sales Reports
