@@ -29,12 +29,14 @@ exports.getSalesExecutiveReports = async (
 
     // ✅ Godown Access Logic
     let godownAccessFilter = {};
+    let allowedGodowns = [];
+    
     if (
       requestingUser &&
       (requestingUser.primaryGodown ||
         requestingUser.accessibleGodowns?.length > 0)
     ) {
-      const allowedGodowns = [
+      allowedGodowns = [
         ...(requestingUser.primaryGodown
           ? [requestingUser.primaryGodown._id || requestingUser.primaryGodown]
           : []),
@@ -68,7 +70,10 @@ exports.getSalesExecutiveReports = async (
           };
         }
       }
-      godownAccessFilter.godown = specificGodown;
+      // When a specific godownId is provided, filter users to only those with this godown
+      godownAccessFilter.godown = {
+        $in: [specificGodown],
+      };
     }
 
     const reports = await User.aggregate([
@@ -103,14 +108,13 @@ exports.getSalesExecutiveReports = async (
       },
 
       // ✅ Godown-based access filtering for Users
-      ...(Object.keys(godownAccessFilter).length > 0 &&
-      requestingUser?.role?.name !== "Super Admin"
+      ...(Object.keys(godownAccessFilter).length > 0
         ? [
             {
               $match: {
                 $or: [
-                  { primaryGodown: { $in: godownAccessFilter.godown.$in || [godownAccessFilter.godown] } },
-                  { accessibleGodowns: { $in: godownAccessFilter.godown.$in || [godownAccessFilter.godown] } },
+                  { primaryGodown: { $in: godownAccessFilter.godown.$in } },
+                  { accessibleGodowns: { $in: godownAccessFilter.godown.$in } },
                 ],
               },
             },
