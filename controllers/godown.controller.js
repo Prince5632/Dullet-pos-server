@@ -419,32 +419,42 @@ const getGodowns = async (req, res) => {
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - inactiveDays);
         
+        // Get all customers who have ever ordered from these godowns
+        const customerOrderStatusFilter = req.query.status 
+          ? req.query.status 
+          : { $nin: ["cancelled", "rejected"] };
+        const customersWithOrders = await Order.distinct('customer', {
+          godown: { $in: godownIds },
+          type: "order",
+          status: customerOrderStatusFilter
+        });
+        
         // Get customers assigned to these godowns
         const assignedCustomers = await Customer.find({ 
           isActive: true,
           assignedGodownId: { $in: godownIds }
         }).select('_id assignedGodownId');
         
-        // Get all customers who have ever ordered from these godowns
-        const customersWithOrders = await Order.distinct('customer', {
-          godown: { $in: godownIds },
-          type: "order",
-          status: { $nin: ["cancelled", "rejected"] }
-        });
-        
         // Combine both sets of customers
         const allRelevantCustomerIds = new Set();
         assignedCustomers.forEach(c => allRelevantCustomerIds.add(c._id.toString()));
         customersWithOrders.forEach(c => allRelevantCustomerIds.add(c.toString()));
         
+        // Validate that all customers exist in customers collection (matching customer reports API logic)
+        const validCustomerIds = await Customer.find({
+          _id: { $in: Array.from(allRelevantCustomerIds).map(id => new mongoose.Types.ObjectId(id)) }
+        }).distinct('_id');
+        const validCustomerIdSet = new Set(validCustomerIds.map(id => id.toString()));
+        const allRelevantCustomerIdsFiltered = Array.from(allRelevantCustomerIds).filter(id => validCustomerIdSet.has(id));
+        
         // Get last order date for each customer in each godown
         const customerGodownOrders = await Order.aggregate([
           {
             $match: {
-              customer: { $in: Array.from(allRelevantCustomerIds).map(id => new mongoose.Types.ObjectId(id)) },
+              customer: { $in: allRelevantCustomerIdsFiltered.map(id => new mongoose.Types.ObjectId(id)) },
               godown: { $in: godownIds },
               type: "order",
-              status: { $nin: ["cancelled", "rejected"] }
+              status: customerOrderStatusFilter
             }
           },
           {
@@ -461,11 +471,14 @@ const getGodowns = async (req, res) => {
         // Create maps for godown assignments and order history
         const godownAssignmentMap = new Map();
         assignedCustomers.forEach(c => {
-          const godownId = c.assignedGodownId.toString();
-          if (!godownAssignmentMap.has(godownId)) {
-            godownAssignmentMap.set(godownId, new Set());
+          // Only include valid customers
+          if (validCustomerIdSet.has(c._id.toString())) {
+            const godownId = c.assignedGodownId.toString();
+            if (!godownAssignmentMap.has(godownId)) {
+              godownAssignmentMap.set(godownId, new Set());
+            }
+            godownAssignmentMap.get(godownId).add(c._id.toString());
           }
-          godownAssignmentMap.get(godownId).add(c._id.toString());
         });
         
         const godownCustomerOrderMap = new Map();
@@ -504,13 +517,14 @@ const getGodowns = async (req, res) => {
       } else {
         // Check if we should only count customers with orders (for customer reports)
         const onlyWithOrders = req.query.onlyWithOrders === 'true';
-        
         if (onlyWithOrders) {
           // For customer reports: count only customers who have placed orders in date range
           const customerOrderFilter = {
             godown: { $in: godownIds },
             type: "order",
-            status: { $nin: ["cancelled", "rejected"] }
+            status: req.query.status 
+              ? req.query.status 
+              : { $nin: ["cancelled", "rejected"] }
           };
 
           // Apply date range filter for orders if provided
@@ -526,7 +540,7 @@ const getGodowns = async (req, res) => {
             }
           }
 
-          // Aggregate unique customer counts by godown based on orders
+          // Aggregate unique customer counts by godown based on orders (matching customer reports API logic)
           const customerCounts = await Order.aggregate([
             { $match: customerOrderFilter },
             {
@@ -536,6 +550,17 @@ const getGodowns = async (req, res) => {
                   customer: "$customer"
                 }
               }
+            },
+            {
+              $lookup: {
+                from: "customers",
+                localField: "_id.customer",
+                foreignField: "_id",
+                as: "customerInfo"
+              }
+            },
+            {
+              $unwind: "$customerInfo"
             },
             {
               $group: {
@@ -709,12 +734,15 @@ const getGodowns = async (req, res) => {
       const customerIds = allActiveCustomers.map(c => c._id);
       
       // Get last order date for each customer
+      const inactiveCustomerStatusFilter = req.query.status 
+        ? req.query.status 
+        : { $nin: ["cancelled", "rejected"] };
       const customerLastOrders = await Order.aggregate([
         {
           $match: {
             customer: { $in: customerIds },
             type: "order",
-            status: { $nin: ["cancelled", "rejected"] }
+            status: inactiveCustomerStatusFilter
           }
         },
         {
@@ -742,10 +770,18 @@ const getGodowns = async (req, res) => {
       
       if (onlyWithOrders) {
         // For customer reports: count unique customers who have placed orders in the date range
+        // This should match the customer reports API logic
         const allCustomerOrderFilter = {
           type: "order",
-          status: { $nin: ["cancelled", "rejected"] }
+          status: req.query.status 
+              ? req.query.status 
+              : { $nin: ["cancelled", "rejected"] }
         };
+
+        // Apply godown filtering to match customer reports API
+        if (godownIds.length > 0) {
+          allCustomerOrderFilter.godown = { $in: godownIds };
+        }
 
         // Apply date range filter for orders if provided
         if (req.query.dateFrom || req.query.dateTo) {
@@ -760,13 +796,24 @@ const getGodowns = async (req, res) => {
           }
         }
 
-        // Count unique customers across all orders
+        // Count unique customers across all orders (matching customer reports API logic)
         const allCustomerCountResult = await Order.aggregate([
           { $match: allCustomerOrderFilter },
           {
             $group: {
               _id: "$customer"
             }
+          },
+          {
+            $lookup: {
+              from: "customers",
+              localField: "_id",
+              foreignField: "_id",
+              as: "customerInfo"
+            }
+          },
+          {
+            $unwind: "$customerInfo"
           },
           {
             $count: "totalCustomers"

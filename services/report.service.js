@@ -419,13 +419,19 @@ exports.getCustomerReports = async (
     const validPage = Math.max(1, parseInt(page) || 1);
     const validLimit = Math.max(1, Math.min(100, parseInt(limit) || 10));
     
-    const { dateRange, customerId, inactiveDays, godownId } = filters;
+    const { dateRange, customerId, inactiveDays, godownId, status } = filters;
 
     // Build match criteria
     const matchCriteria = {
       type: "order",
-      status: { $nin: ["cancelled", "rejected"] },
     };
+
+    // Apply status filter if provided, otherwise exclude cancelled and rejected
+    if (status) {
+      matchCriteria.status = status;
+    } else {
+      matchCriteria.status = { $nin: ["cancelled", "rejected"] };
+    }
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
       matchCriteria.orderDate = {};
@@ -606,7 +612,7 @@ exports.getCustomerReports = async (
 /**
  * Get Inactive Customers
  */
-exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit = 10) => {
+exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit = 10, status = null) => {
   try {
     // Validate pagination parameters
     const validPage = Math.max(1, parseInt(page) || 1);
@@ -618,8 +624,14 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
     // Build aggregation pipeline to get last order date for each customer
     const orderMatchCriteria = {
       type: "order",
-      status: { $nin: ["cancelled", "rejected"] }
     };
+    
+    // Apply status filter if provided, otherwise exclude cancelled and rejected
+    if (status) {
+      orderMatchCriteria.status = status;
+    } else {
+      orderMatchCriteria.status = { $nin: ["cancelled", "rejected"] };
+    }
     
     if (godownId) {
       orderMatchCriteria.godown = new mongoose.Types.ObjectId(godownId);
