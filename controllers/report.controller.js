@@ -137,6 +137,7 @@ exports.getCustomerReports = async (req, res) => {
       inactiveDays, // Dynamic parameter for inactive customers
       godownId, // Add godown filtering support
       status, // Order status filter
+      deliveryStatus, // Delivery status filter
       page = 1,
       limit = 10,
     } = req.query;
@@ -167,6 +168,9 @@ exports.getCustomerReports = async (req, res) => {
     if (status) {
       filters.status = status;
     }
+    if (deliveryStatus) {
+      filters.deliveryStatus = deliveryStatus;
+    }
 
     const report = await reportService.getCustomerReports(
       filters,
@@ -190,14 +194,15 @@ exports.getCustomerReports = async (req, res) => {
  */
 exports.getInactiveCustomers = async (req, res) => {
   try {
-    const { days = 7, godownId, status, page = 1, limit = 10 } = req.query;
+    const { days = 7, godownId, status, deliveryStatus, page = 1, limit = 10 } = req.query;
 
     const inactiveCustomers = await reportService.getInactiveCustomers(
       parseInt(days),
       godownId,
       parseInt(page),
       parseInt(limit),
-      status
+      status,
+      deliveryStatus
     );
 
     return sendSuccess(

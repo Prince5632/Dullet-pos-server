@@ -132,6 +132,7 @@ exports.getSalesExecutiveReports = async (
                 $expr: { $eq: ["$createdBy", "$$userId"] },
                 type: type || "order",
                 status: { $nin: ["cancelled", "rejected"] },
+                deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
                 ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {}),
                 ...(dateRange && (dateRange.startDate || dateRange.endDate)
                   ? {
@@ -305,6 +306,7 @@ exports.getGodownSalesReports = async (
     const matchCriteria = {
       type: "order",
       status: { $nin: ["cancelled", "rejected"] },
+      deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
     };
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
@@ -419,7 +421,7 @@ exports.getCustomerReports = async (
     const validPage = Math.max(1, parseInt(page) || 1);
     const validLimit = Math.max(1, Math.min(100, parseInt(limit) || 10));
     
-    const { dateRange, customerId, inactiveDays, godownId, status } = filters;
+    const { dateRange, customerId, inactiveDays, godownId, status, deliveryStatus } = filters;
 
     // Build match criteria
     const matchCriteria = {
@@ -431,6 +433,14 @@ exports.getCustomerReports = async (
       matchCriteria.status = status;
     } else {
       matchCriteria.status = { $nin: ["cancelled", "rejected"] };
+    }
+    
+    // Apply delivery status filter if provided
+    if (deliveryStatus) {
+      matchCriteria.deliveryStatus = deliveryStatus;
+    } else if (!status) {
+      // Only apply default delivery status filter if no status filter is provided
+      matchCriteria.deliveryStatus = { $nin: ["cancelled", "not_delivered"] };
     }
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
@@ -612,7 +622,7 @@ exports.getCustomerReports = async (
 /**
  * Get Inactive Customers
  */
-exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit = 10, status = null) => {
+exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit = 10, status = null, deliveryStatus = null) => {
   try {
     // Validate pagination parameters
     const validPage = Math.max(1, parseInt(page) || 1);
@@ -631,6 +641,14 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
       orderMatchCriteria.status = status;
     } else {
       orderMatchCriteria.status = { $nin: ["cancelled", "rejected"] };
+    }
+    
+    // Apply delivery status filter if provided
+    if (deliveryStatus) {
+      orderMatchCriteria.deliveryStatus = deliveryStatus;
+    } else if (!status) {
+      // Only apply default delivery status filter if no status filter is provided
+      orderMatchCriteria.deliveryStatus = { $nin: ["cancelled", "not_delivered"] };
     }
     
     if (godownId) {
@@ -1298,6 +1316,7 @@ exports.getCustomerPurchaseDetail = async (customerId, filters = {}) => {
       customer: new mongoose.Types.ObjectId(customerId),
       type: "order",
       status: { $nin: ["cancelled", "rejected"] },
+      deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
     };
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
