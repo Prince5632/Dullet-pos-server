@@ -148,13 +148,13 @@ const getGodowns = async (req, res) => {
       const baseOrderFilter = {
         ...countFilter,
         type: "order",
-        // status: { $nin: ["cancelled", "rejected"] },
+        status: { $nin: ["cancelled", "rejected"] },
       };
 
       const baseVisitFilter = {
         ...countFilter,
         type: "visit",
-        // status: { $nin: ["cancelled", "rejected"] },
+        status: { $nin: ["cancelled", "rejected"] },
       };
 
       // Get department filter from query params (optional)

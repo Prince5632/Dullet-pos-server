@@ -2126,7 +2126,6 @@ class OrderService {
       Order.aggregate([
         ...createPipeline({
           type: "order",
-          orderDate: { $gte: startOfMonth },
           ...filter,
         }),
         { $group: { _id: null, total: { $sum: "$totalAmount" } } },
