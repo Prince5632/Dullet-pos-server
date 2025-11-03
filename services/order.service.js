@@ -36,18 +36,21 @@ class OrderService {
       .select("totalAmount paidAmount")
       .lean();
 
-    // Safe number conversion helper
-    const safeNumber = (val) => (isNaN(Number(val)) ? 0 : Number(val));
+    // Safe number conversion helper with 2 decimal places
+    const safeNumber = (val) => {
+      const num = isNaN(Number(val)) ? 0 : Number(val);
+      return Math.round(num * 100) / 100;
+    };
 
     // Calculate total previous balance
     const previousBalance = otherCustomerOrders.reduce((total, ord) => {
       const totalAmt = safeNumber(ord.totalAmount);
       const paidAmt = safeNumber(ord.paidAmount);
       const outstanding = Math.max(0, totalAmt - paidAmt);
-      return total + outstanding;
+      return safeNumber(total + outstanding);
     }, 0);
 
-    return previousBalance;
+    return safeNumber(previousBalance);
   }
 
   // Get all orders with pagination and filtering
@@ -2477,8 +2480,11 @@ class OrderService {
     previousBalance
   ) {
     try {
-      // Ensure safe numeric conversions
-      const safeNumber = (val) => (isNaN(Number(val)) ? 0 : Number(val));
+      // Ensure safe numeric conversions with 2 decimal places
+      const safeNumber = (val) => {
+        const num = isNaN(Number(val)) ? 0 : Number(val);
+        return Math.round(num * 100) / 100;
+      };
       const customerCurrentRemaining = await this.calculatePreviousBalance(
         order.customer
       );
@@ -2499,7 +2505,7 @@ class OrderService {
         previousBalance: safeNumber(previousBalance),
         totalAmount: safeNumber(totalAmount) + safeNumber(previousBalance),
         paidAmount: safeNumber(paidAmount),
-        netBalanceRemaining,
+        netBalanceRemaining: safeNumber(netBalanceRemaining),
         recordedBy,
         recordedAt: new Date(),
       };
@@ -2569,44 +2575,13 @@ class OrderService {
   // Get delivery time PDF changes by order ID
   async getDeliveryTimePdfChangesByOrderId(orderId) {
     try {
-      // Try to find the delivery time PDF change record
-      const deliveryTimePdfChanges = await DeliveryTimePdfChanges.findOne({ orderId })
-        .populate("orderId", "orderNumber type")
-        .populate("customerId", "name email phone")
-        .populate("recordedBy", "name email");
-
-      // If found, return it
-      if (deliveryTimePdfChanges) {
-        return {
-          success: true,
-          data: deliveryTimePdfChanges,
-        };
-      }
-
-      // If not found, create a new record from the order
-      const newRecord = await this.createDeliveryTimePdfChangesFromOrder(orderId);
-      return {
-        success: true,
-        data: newRecord,
-      };
-    } catch (error) {
-      console.error("Error fetching delivery time PDF changes:", error);
-      throw error;
-    }
-  }
-
-
-  // Create delivery time PDF changes entry from order data
-  async createDeliveryTimePdfChangesFromOrder(orderId) {
-    try {
-      // First check if entry already exists
-      const existingRecord = await DeliveryTimePdfChanges.findOne({ orderId });
-      if (existingRecord) {
-        return existingRecord;
-      }
-
       // Get the order data
       const order = await Order.findById(orderId).populate("customer");
+      if (!order) {
+        throw new Error("Order not found");
+      }
+
+      // Calculate current balances
       const previousBalance = await this.calculatePreviousBalance(
         order?.customer?._id,
         orderId
@@ -2614,17 +2589,18 @@ class OrderService {
       const currentBalance = await this.calculatePreviousBalance(
         order?.customer?._id
       );
-      if (!order) {
-        throw new Error("Order not found");
-      }
 
-      // Ensure safe numeric conversions
-      const safeNumber = (val) => (isNaN(Number(val)) ? 0 : Number(val));
+      // Ensure safe numeric conversions with 2 decimal places
+      const safeNumber = (val) => {
+        const num = isNaN(Number(val)) ? 0 : Number(val);
+        return Math.round(num * 100) / 100;
+      };
 
       const totalAmount =
         safeNumber(previousBalance) + safeNumber(order.totalAmount);
       const paidAmount = safeNumber(order.paidAmount);
-      const netBalanceRemaining = currentBalance;
+      const netBalanceRemaining = safeNumber(currentBalance);
+      const pendingAmount = safeNumber(totalAmount - paidAmount);
 
       // Create the delivery time PDF changes entry
       const deliveryTimePdfData = {
@@ -2634,19 +2610,50 @@ class OrderService {
         subTotal: safeNumber(order.subtotal),
         taxAmount: safeNumber(order.taxAmount),
         previousBalance: safeNumber(previousBalance),
-        totalAmount: totalAmount,
-        paidAmount: paidAmount,
-        netBalanceRemaining: netBalanceRemaining,
+        pendingAmount: safeNumber(pendingAmount),
+        totalAmount: safeNumber(totalAmount),
+        paidAmount: safeNumber(paidAmount),
+        netBalanceRemaining: safeNumber(netBalanceRemaining),
         recordedBy: order.createdBy,
         recordedAt: new Date(),
       };
 
-      const newRecord = await DeliveryTimePdfChanges.create(
-        deliveryTimePdfData
-      );
+      // Try to find existing record
+      const existingRecord = await DeliveryTimePdfChanges.findOne({ orderId })
+        .populate("orderId", "orderNumber type")
+        .populate("customerId", "name email phone")
+        .populate("recordedBy", "name email");
 
-      return newRecord;
+      if (existingRecord) {
+        // Update existing record with new calculated values
+        const updatedRecord = await DeliveryTimePdfChanges.findOneAndUpdate(
+          { orderId },
+          deliveryTimePdfData,
+          { new: true }
+        )
+          .populate("orderId", "orderNumber type")
+          .populate("customerId", "name email phone")
+          .populate("recordedBy", "name email");
+
+        return {
+          success: true,
+          data: updatedRecord,
+        };
+      } else {
+        // Create new record if not exists
+        const newRecord = await DeliveryTimePdfChanges.create(deliveryTimePdfData);
+        const populatedRecord = await DeliveryTimePdfChanges.findById(newRecord._id)
+          .populate("orderId", "orderNumber type")
+          .populate("customerId", "name email phone")
+          .populate("recordedBy", "name email");
+
+        return {
+          success: true,
+          data: populatedRecord,
+        };
+      }
     } catch (error) {
+      console.error("Error fetching delivery time PDF changes:", error);
       throw error;
     }
   }

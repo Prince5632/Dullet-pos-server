@@ -88,6 +88,14 @@ const deliveryTimePdfChangesSchema = new mongoose.Schema({
     min: 0
   },
   
+  // Pending amount (totalAmount - paidAmount)
+  pendingAmount: {
+    type: Number,
+    required: true,
+    min: 0,
+    default: 0
+  },
+  
   // The new paid amount (order.paidAmount old + new paidAmount)
   paidAmount: {
     type: Number,
