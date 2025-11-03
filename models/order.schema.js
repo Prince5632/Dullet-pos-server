@@ -136,6 +136,34 @@ const orderSchema = new mongoose.Schema({
     ],
     default: 'pending'
   },
+  // Delivery Status
+  deliveryStatus: {
+    type: String,
+    enum: ['pending', 'delivered', 'not_delivered', 'cancelled'],
+    default: 'pending'
+  },
+  // Delivery Status History
+  deliveryStatusHistory: [{
+    status: {
+      type: String,
+      enum: ['pending', 'delivered', 'not_delivered', 'cancelled'],
+      required: true
+    },
+    changedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    changedAt: {
+      type: Date,
+      default: Date.now,
+      required: true
+    },
+    notes: {
+      type: String,
+      default: ''
+    }
+  }],
   priority: {
     type: String,
     enum: ['low', 'normal', 'high', 'urgent'],
@@ -285,6 +313,7 @@ const orderSchema = new mongoose.Schema({
 orderSchema.index({ orderNumber: 1 }, { unique: true });
 orderSchema.index({ customer: 1 });
 orderSchema.index({ status: 1 });
+orderSchema.index({ deliveryStatus: 1 });
 orderSchema.index({ orderDate: -1 });
 orderSchema.index({ createdBy: 1 });
 orderSchema.index({ paymentStatus: 1 });

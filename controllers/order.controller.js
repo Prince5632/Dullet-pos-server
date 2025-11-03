@@ -685,6 +685,27 @@ const getOrCreateDeliveryTimePdfChanges = async (req, res) => {
   }
 };
 
+// Update delivery status controller
+const updateDeliveryStatus = async (req, res) => {
+  try {
+    const { deliveryStatus, notes } = req.body;
+    const result = await orderService.updateDeliveryStatus(req.params.id, deliveryStatus, req.user.id, notes);
+    res.status(200).json(result);
+  } catch (error) {
+    if (error.message === 'Order not found') {
+      res.status(404).json({
+        success: false,
+        message: error.message
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+};
+
 module.exports = {
   getAllOrders,
   getOrderById,
@@ -718,6 +739,7 @@ module.exports = {
   getVisitAuditTrail,
   getDeliveryTimePdfChanges,
   createDeliveryTimePdfChanges,
-  getOrCreateDeliveryTimePdfChanges
+  getOrCreateDeliveryTimePdfChanges,
+  updateDeliveryStatus
 };
 

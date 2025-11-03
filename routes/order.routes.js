@@ -1428,5 +1428,51 @@ router.post('/:orderId/delivery-time-pdf-changes', authenticate, authorize('orde
  */
 router.get('/:orderId/delivery-time-pdf-changes/get-or-create', authenticate, authorize('orders.read'), orderController.getOrCreateDeliveryTimePdfChanges);
 
+/**
+ * @swagger
+ * /api/orders/{id}/delivery-status:
+ *   put:
+ *     summary: Update order delivery status
+ *     description: Update the delivery status of an order with optional notes
+ *     tags: [Order Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - deliveryStatus
+ *             properties:
+ *               deliveryStatus:
+ *                 type: string
+ *                 enum: [pending, delivered, not_delivered, cancelled]
+ *                 example: "delivered"
+ *               notes:
+ *                 type: string
+ *                 example: "Order successfully delivered to customer"
+ *     responses:
+ *       200:
+ *         description: Delivery status updated successfully
+ *       404:
+ *         description: Order not found
+ *       400:
+ *         description: Invalid delivery status or request data
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.put('/:id/delivery-status', authenticate, authorize('orders.update'), orderController.updateDeliveryStatus);
+
 module.exports = router;
 

@@ -71,6 +71,11 @@ const getGodowns = async (req, res) => {
         countFilter.status = req.query.status;
       }
 
+      // Apply delivery status filter
+      if (req.query.deliveryStatus) {
+        countFilter.deliveryStatus = req.query.deliveryStatus;
+      }
+
       // Apply payment status filter
       if (req.query.paymentStatus) {
         countFilter.paymentStatus = req.query.paymentStatus;
@@ -148,13 +153,13 @@ const getGodowns = async (req, res) => {
       const baseOrderFilter = {
         ...countFilter,
         type: "order",
-        status: { $nin: ["cancelled", "rejected"] },
+        // status: { $nin: ["cancelled", "rejected"] },
       };
 
       const baseVisitFilter = {
         ...countFilter,
         type: "visit",
-        status: { $nin: ["cancelled", "rejected"] },
+        // status: { $nin: ["cancelled", "rejected"] },
       };
 
       // Get department filter from query params (optional)

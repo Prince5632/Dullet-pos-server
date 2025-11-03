@@ -60,6 +60,7 @@ class OrderService {
       limit = 10,
       search = "",
       status = "",
+      deliveryStatus = "",
       paymentStatus = "",
       customerId = "",
       dateFrom = "",
@@ -88,11 +89,12 @@ class OrderService {
       filter.$or = [{ orderNumber: { $regex: search, $options: "i" } }];
     }
 
-    if (paymentStatus) {
-      filter.paymentStatus = paymentStatus;
-    }
     if (status) {
       filter.status = status;
+    }
+
+    if (deliveryStatus) {
+      filter.deliveryStatus = deliveryStatus;
     }
 
     if (paymentStatus) {
@@ -1934,6 +1936,7 @@ class OrderService {
     const {
       search = "",
       status = "",
+      deliveryStatus = "",
       paymentStatus = "",
       customerId = "",
       dateFrom = "",
@@ -1955,6 +1958,11 @@ class OrderService {
     // Apply status filter
     if (status) {
       filter.status = status;
+    }
+
+    // Apply delivery status filter
+    if (deliveryStatus) {
+      filter.deliveryStatus = deliveryStatus;
     }
 
     // Apply payment status filter
@@ -2130,6 +2138,8 @@ class OrderService {
         ...createPipeline({
           type: "order",
           ...filter,
+          status: { $in: ["pending", "approved","delivered","out_for_delivery","driver_assigned"] },
+        deliveryStatus: { $in: ["pending", "delivered"] },
         }),
         { $group: { _id: null, total: { $sum: "$totalAmount" } } },
       ]).then((result) => (Array.isArray(result) && result[0]?.total) || 0),
@@ -2675,6 +2685,64 @@ class OrderService {
     } catch (error) {
       throw error;
     }
+  }
+
+  // Update delivery status
+  async updateDeliveryStatus(orderId, deliveryStatus, updatedBy, notes = "") {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error("Order not found");
+    }
+
+    // Validate delivery status enum
+    const validStatuses = ['pending', 'delivered', 'not_delivered', 'cancelled'];
+    if (!validStatuses.includes(deliveryStatus)) {
+      throw new Error(`Invalid delivery status. Must be one of: ${validStatuses.join(', ')}`);
+    }
+
+    const oldDeliveryStatus = order.deliveryStatus;
+    const oldValues = order.toObject();
+
+    // Update delivery status and related fields
+    order.deliveryStatus = deliveryStatus;
+    order.updatedBy = updatedBy;
+
+    // Add to delivery status history
+    order.deliveryStatusHistory.push({
+      status: deliveryStatus,
+      changedBy: updatedBy,
+      changedAt: new Date(),
+      notes: notes || ''
+    });
+
+    // Add notes if provided
+    if (notes) {
+      order.internalNotes = order.internalNotes
+        ? `${order.internalNotes}\n[DELIVERY STATUS] ${notes}`
+        : `[DELIVERY STATUS] ${notes}`;
+    }
+
+    await order.save();
+
+    // Log the action
+    await AuditLog.create({
+      user: updatedBy,
+      action: "UPDATE",
+      module: "orders",
+      resourceType: "Order",
+      resourceId: order._id.toString(),
+      oldValues,
+      newValues: order.toObject(),
+      description: `Updated delivery status from ${oldDeliveryStatus} to ${deliveryStatus}: ${order.orderNumber}`,
+      ipAddress: "0.0.0.0",
+      userAgent: "System",
+    });
+
+    return {
+      success: true,
+      data: { order },
+      message: `Delivery status updated to ${deliveryStatus}`,
+    };
   }
 }
 
