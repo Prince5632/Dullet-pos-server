@@ -88,7 +88,7 @@ class OrderService {
     if (paymentStatus) {
       filter.paymentStatus = paymentStatus;
     }
-    if(status) {
+    if (status) {
       filter.status = status;
     }
 
@@ -205,12 +205,12 @@ class OrderService {
         const accessibleList = currentUser.accessibleGodowns?.length
           ? toIds(currentUser.accessibleGodowns)
           : currentUser.primaryGodown
-          ? [
+            ? [
               typeof currentUser.primaryGodown === "object"
                 ? currentUser.primaryGodown._id
                 : currentUser.primaryGodown,
             ]
-          : [];
+            : [];
         if (accessibleList && accessibleList.length > 0) {
           filter.godown = { $in: accessibleList };
         } else {
@@ -561,7 +561,7 @@ class OrderService {
     try {
       const creator = await User.findById(createdBy).populate("role");
       creatorRoleName = creator?.role?.name || "";
-    } catch {}
+    } catch { }
 
     // Create order
     const order = new Order({
@@ -577,7 +577,7 @@ class OrderService {
         if (creator?.primaryGodown) {
           order.godown = creator.primaryGodown;
         }
-      } catch {}
+      } catch { }
     }
 
     await order.save();
@@ -1197,11 +1197,11 @@ class OrderService {
     const order = await Order.findById(orderId);
     if (!order) throw new Error("Order not found");
 
-    if (order.status !== "driver_assigned") {
-      throw new Error(
-        "Order must have an assigned driver before marking out for delivery"
-      );
-    }
+    // if (order.status !== "driver_assigned") {
+    //   throw new Error(
+    //     "Order must have an assigned driver before marking out for delivery"
+    //   );
+    // }
 
     const isDriver = user.role?.name === "Driver";
     const isAssignedDriver =
@@ -1213,11 +1213,17 @@ class OrderService {
     const isManagerOrAdmin = ["Manager", "Admin", "Super Admin"].includes(
       user.role?.name
     );
-
+    // if (
+    //       !hasManagePermission &&
+    //       !isManagerOrAdmin &&
+    //       !(isDriver && isAssignedDriver)
+    //     ) {
+    //       throw new Error("Access denied: Cannot mark this order out for delivery");
+    //     }
     if (
       !hasManagePermission &&
       !isManagerOrAdmin &&
-      !(isDriver && isAssignedDriver)
+      !(isDriver)
     ) {
       throw new Error("Access denied: Cannot mark this order out for delivery");
     }
@@ -1863,12 +1869,12 @@ class OrderService {
         const accessibleList = currentUser.accessibleGodowns?.length
           ? toIds(currentUser.accessibleGodowns)
           : currentUser.primaryGodown
-          ? [
+            ? [
               typeof currentUser.primaryGodown === "object"
                 ? currentUser.primaryGodown._id
                 : currentUser.primaryGodown,
             ]
-          : [];
+            : [];
         if (accessibleList && accessibleList.length > 0) {
           filter.godown = { $in: accessibleList };
         } else {
@@ -2018,7 +2024,7 @@ class OrderService {
         else if (currentUser.primaryGodown) {
           const primaryGodownId =
             typeof currentUser.primaryGodown === "object" &&
-            currentUser.primaryGodown._id
+              currentUser.primaryGodown._id
               ? currentUser.primaryGodown._id
               : currentUser.primaryGodown;
           filter.godown = primaryGodownId;
@@ -2042,7 +2048,7 @@ class OrderService {
     // Helper function to create aggregation pipeline with role filter
     const createPipeline = (matchConditions) => {
       const pipeline = [{ $match: matchConditions }];
-      
+
       if (roleId) {
         pipeline.push(
           {
@@ -2061,7 +2067,7 @@ class OrderService {
           }
         );
       }
-      
+
       return pipeline;
     };
 
@@ -2077,46 +2083,46 @@ class OrderService {
       monthlyRevenue,
     ] = await Promise.all([
       // Use aggregation for role filtering, fallback to countDocuments if no role filter
-      roleId 
+      roleId
         ? Order.aggregate([...createPipeline({ ...filter, type: "order" }), { $count: "count" }])
-            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
         : Order.countDocuments({ ...filter, type: "order" }),
-      
-      roleId 
+
+      roleId
         ? Order.aggregate([...createPipeline({ ...filter, type: "visit" }), { $count: "count" }])
-            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
         : Order.countDocuments({ ...filter, type: "visit" }),
-      
-      roleId 
+
+      roleId
         ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "pending" }), { $count: "count" }])
-            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
         : Order.countDocuments({ ...filter, type: "order", status: "pending" }),
-      
-      roleId 
+
+      roleId
         ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "approved" }), { $count: "count" }])
-            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
         : Order.countDocuments({ ...filter, type: "order", status: "approved" }),
-      
-      roleId 
+
+      roleId
         ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "completed" }), { $count: "count" }])
-            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
         : Order.countDocuments({ ...filter, type: "order", status: "completed" }),
-      
-      roleId 
+
+      roleId
         ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "rejected" }), { $count: "count" }])
-            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
         : Order.countDocuments({ ...filter, type: "order", status: "rejected" }),
-      
-      roleId 
+
+      roleId
         ? Order.aggregate([...createPipeline({ ...filter, type: "order", orderDate: { $gte: startOfToday } }), { $count: "count" }])
-            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
         : Order.countDocuments({ ...filter, type: "order", orderDate: { $gte: startOfToday } }),
-      
-      roleId 
+
+      roleId
         ? Order.aggregate([...createPipeline({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }), { $count: "count" }])
-            .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
+          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
         : Order.countDocuments({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }),
-      
+
       Order.aggregate([
         ...createPipeline({
           type: "order",
@@ -2369,7 +2375,7 @@ class OrderService {
         if (creator?.primaryGodown) {
           visit.godown = creator.primaryGodown;
         }
-      } catch {}
+      } catch { }
     }
 
     await visit.save();
@@ -2561,34 +2567,34 @@ class OrderService {
     };
   }
 
-// Get delivery time PDF changes by order ID
-async getDeliveryTimePdfChangesByOrderId(orderId) {
-  try {
-    // Try to find the delivery time PDF change record
-    const deliveryTimePdfChanges = await DeliveryTimePdfChanges.findOne({ orderId })
-      .populate("orderId", "orderNumber type")
-      .populate("customerId", "name email phone")
-      .populate("recordedBy", "name email");
+  // Get delivery time PDF changes by order ID
+  async getDeliveryTimePdfChangesByOrderId(orderId) {
+    try {
+      // Try to find the delivery time PDF change record
+      const deliveryTimePdfChanges = await DeliveryTimePdfChanges.findOne({ orderId })
+        .populate("orderId", "orderNumber type")
+        .populate("customerId", "name email phone")
+        .populate("recordedBy", "name email");
 
-    // If found, return it
-    if (deliveryTimePdfChanges) {
+      // If found, return it
+      if (deliveryTimePdfChanges) {
+        return {
+          success: true,
+          data: deliveryTimePdfChanges,
+        };
+      }
+
+      // If not found, create a new record from the order
+      const newRecord = await this.createDeliveryTimePdfChangesFromOrder(orderId);
       return {
         success: true,
-        data: deliveryTimePdfChanges,
+        data: newRecord,
       };
+    } catch (error) {
+      console.error("Error fetching delivery time PDF changes:", error);
+      throw error;
     }
-
-    // If not found, create a new record from the order
-    const newRecord = await this.createDeliveryTimePdfChangesFromOrder(orderId);
-    return {
-      success: true,
-      data: newRecord,
-    };
-  } catch (error) {
-    console.error("Error fetching delivery time PDF changes:", error);
-    throw error;
   }
-}
 
 
   // Create delivery time PDF changes entry from order data
