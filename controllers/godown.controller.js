@@ -153,13 +153,13 @@ const getGodowns = async (req, res) => {
       const baseOrderFilter = {
         ...countFilter,
         type: "order",
-        // status: { $nin: ["cancelled", "rejected"] },
+        status: { $nin: ["cancelled", "rejected"] },
       };
 
       const baseVisitFilter = {
         ...countFilter,
         type: "visit",
-        // status: { $nin: ["cancelled", "rejected"] },
+        status: { $nin: ["cancelled", "rejected"] },
       };
 
       // Get department filter from query params (optional)
@@ -190,6 +190,42 @@ const getGodowns = async (req, res) => {
         {
           $unwind: { path: "$userRole", preserveNullAndEmptyArrays: true },
         },
+      ];
+
+      // Create a separate pipeline for deleted user orders
+      const deletedUserOrderPipeline = [
+        {
+          $match: {
+            ...baseOrderFilter,
+            $or: [
+              { createdBy: null },
+              { createdBy: { $exists: false } }
+            ]
+          }
+        }
+      ];
+
+      // Create a separate pipeline for orphaned orders (createdBy references non-existent user)
+      const orphanedOrderPipeline = [
+        {
+          $match: {
+            ...baseOrderFilter,
+            createdBy: { $exists: true, $ne: null }
+          }
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "createdBy",
+            foreignField: "_id",
+            as: "userExists",
+          },
+        },
+        {
+          $match: {
+            userExists: { $size: 0 } // No matching user found
+          }
+        }
       ];
       if (req.query.onlySalesExecutive === "true") {
         orderPipeline.push({
@@ -228,13 +264,32 @@ const getGodowns = async (req, res) => {
 
       orderPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
 
-      // Aggregate order counts with filters
-      const orderCounts = await Order.aggregate(orderPipeline); // [memory:1][memory:2]
+      // Add grouping for deleted user pipelines
+      deletedUserOrderPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
+      orphanedOrderPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
 
-      orderCountsMap = orderCounts.reduce((acc, c) => {
-        acc[c._id.toString()] = c.count;
+      // Aggregate order counts with filters
+      console.log("🔍 Godown API - Processing order counts...");
+      const orderCounts = await Order.aggregate(orderPipeline); // [memory:1][memory:2]
+      
+      // Aggregate deleted user order counts
+      const deletedUserOrderCounts = await Order.aggregate(deletedUserOrderPipeline);
+      const orphanedOrderCounts = await Order.aggregate(orphanedOrderPipeline);
+
+      console.log("📊 Godown API - Regular orders:", orderCounts.reduce((sum, c) => sum + c.count, 0));
+      console.log("📊 Godown API - Deleted user orders:", deletedUserOrderCounts.reduce((sum, c) => sum + c.count, 0));
+      console.log("📊 Godown API - Orphaned orders:", orphanedOrderCounts.reduce((sum, c) => sum + c.count, 0));
+
+      // Combine all order counts
+      const allOrderCounts = [...orderCounts, ...deletedUserOrderCounts, ...orphanedOrderCounts];
+      
+      orderCountsMap = allOrderCounts.reduce((acc, c) => {
+        const godownId = c._id?.toString() || 'null';
+        acc[godownId] = (acc[godownId] || 0) + c.count;
         return acc;
       }, {}); // [memory:1]
+
+      console.log("✅ Godown API - Total orders counted:", Object.values(orderCountsMap).reduce((sum, count) => sum + count, 0));
 
       // Build aggregation pipeline for visit counts
       const visitPipeline = [
@@ -261,6 +316,41 @@ const getGodowns = async (req, res) => {
         {
           $unwind: { path: "$userRole", preserveNullAndEmptyArrays: true },
         },
+      ];
+
+      // Create separate pipelines for deleted user visits
+      const deletedUserVisitPipeline = [
+        {
+          $match: {
+            ...baseVisitFilter,
+            $or: [
+              { createdBy: null },
+              { createdBy: { $exists: false } }
+            ]
+          }
+        }
+      ];
+
+      const orphanedVisitPipeline = [
+        {
+          $match: {
+            ...baseVisitFilter,
+            createdBy: { $exists: true, $ne: null }
+          }
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "createdBy",
+            foreignField: "_id",
+            as: "userExists",
+          },
+        },
+        {
+          $match: {
+            userExists: { $size: 0 } // No matching user found
+          }
+        }
       ];
       if (req.query.onlySalesExecutive === "true") {
         visitPipeline.push({
@@ -299,11 +389,23 @@ const getGodowns = async (req, res) => {
  
       visitPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
 
+      // Add grouping for deleted user visit pipelines
+      deletedUserVisitPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
+      orphanedVisitPipeline.push({ $group: { _id: "$godown", count: { $sum: 1 } } });
+
       // Aggregate visit counts with filters
       const visitCounts = await Order.aggregate(visitPipeline); // [memory:1][memory:2]
+      
+      // Aggregate deleted user visit counts
+      const deletedUserVisitCounts = await Order.aggregate(deletedUserVisitPipeline);
+      const orphanedVisitCounts = await Order.aggregate(orphanedVisitPipeline);
 
-      visitCountsMap = visitCounts.reduce((acc, c) => {
-        acc[c._id.toString()] = c.count;
+      // Combine all visit counts
+      const allVisitCounts = [...visitCounts, ...deletedUserVisitCounts, ...orphanedVisitCounts];
+
+      visitCountsMap = allVisitCounts.reduce((acc, c) => {
+        const godownId = c._id?.toString() || 'null';
+        acc[godownId] = (acc[godownId] || 0) + c.count;
         return acc;
       }, {}); // [memory:1]
 

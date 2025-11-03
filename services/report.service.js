@@ -266,6 +266,190 @@ exports.getSalesExecutiveReports = async (
       { $sort: { [sortBy]: sortOrder === "desc" ? -1 : 1 } },
     ]);
 
+    // ✅ Handle orders created by deleted users (createdBy is null or missing)
+    console.log("🔍 Checking for deleted user orders...");
+    const deletedUserOrdersPipeline = [
+      {
+        $match: {
+          $or: [
+            { createdBy: null },
+            { createdBy: { $exists: false } }
+          ],
+          type: type || "order",
+          status: { $nin: ["cancelled", "rejected"] },
+          deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
+          ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {}),
+          ...(dateRange && (dateRange.startDate || dateRange.endDate)
+            ? {
+                orderDate: {
+                  ...(dateRange.startDate ? { $gte: dateRange.startDate } : {}),
+                  ...(dateRange.endDate ? { $lte: dateRange.endDate } : {}),
+                },
+              }
+            : {}),
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: "$totalAmount" },
+          totalPaidAmount: { $sum: "$paidAmount" },
+          pendingOrders: {
+            $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+          },
+          approvedOrders: {
+            $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] },
+          },
+          deliveredOrders: {
+            $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] },
+          },
+          completedOrders: {
+            $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
+          },
+          uniqueCustomers: { $addToSet: "$customer" },
+          lastActivityDate: { $max: "$orderDate" },
+        },
+      },
+    ];
+
+    const deletedUserStats = await Order.aggregate(deletedUserOrdersPipeline);
+    console.log("📊 Deleted user stats found:", deletedUserStats);
+    
+    const deletedUserReport = deletedUserStats.length > 0 ? {
+      _id: "deleted-user",
+      executiveName: "Deleted User",
+      employeeId: "N/A",
+      email: "N/A",
+      phone: "N/A",
+      department: "N/A",
+      position: "N/A",
+      roleName: "Deleted User",
+      totalOrders: deletedUserStats[0].totalOrders,
+      totalRevenue: Math.round(deletedUserStats[0].totalRevenue * 100) / 100,
+      totalPaidAmount: Math.round(deletedUserStats[0].totalPaidAmount * 100) / 100,
+      totalOutstanding: Math.round((deletedUserStats[0].totalRevenue - deletedUserStats[0].totalPaidAmount) * 100) / 100,
+      avgOrderValue: deletedUserStats[0].totalOrders > 0 ? 
+        Math.round((deletedUserStats[0].totalRevenue / deletedUserStats[0].totalOrders) * 100) / 100 : 0,
+      pendingOrders: deletedUserStats[0].pendingOrders,
+      approvedOrders: deletedUserStats[0].approvedOrders,
+      deliveredOrders: deletedUserStats[0].deliveredOrders,
+      completedOrders: deletedUserStats[0].completedOrders,
+      uniqueCustomersCount: deletedUserStats[0].uniqueCustomers.length,
+      conversionRate: 0,
+      lastActivityDate: deletedUserStats[0].lastActivityDate,
+      daysSinceLastActivity: deletedUserStats[0].lastActivityDate ? 
+        Math.round((new Date() - deletedUserStats[0].lastActivityDate) / (1000 * 60 * 60 * 24)) : null,
+      daysSinceUserCreation: 0,
+    } : null;
+
+    console.log("👤 Deleted user report created:", deletedUserReport);
+
+    // Add deleted user report to the results if it exists
+    if (deletedUserReport) {
+      reports.push(deletedUserReport);
+      console.log("✅ Added deleted user report to results. Total reports:", reports.length);
+    } else {
+      console.log("ℹ️ No deleted user orders found");
+    }
+
+    // ✅ Also check for orders where createdBy references a non-existent user
+    console.log("🔍 Checking for orders with non-existent createdBy references...");
+    const orphanedOrdersPipeline = [
+      {
+        $match: {
+          type: type || "order",
+          status: { $nin: ["cancelled", "rejected"] },
+          deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
+          createdBy: { $exists: true, $ne: null },
+          ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {}),
+          ...(dateRange && (dateRange.startDate || dateRange.endDate)
+            ? {
+                orderDate: {
+                  ...(dateRange.startDate ? { $gte: dateRange.startDate } : {}),
+                  ...(dateRange.endDate ? { $lte: dateRange.endDate } : {}),
+                },
+              }
+            : {}),
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "_id",
+          as: "userExists",
+        },
+      },
+      {
+        $match: {
+          userExists: { $size: 0 } // No matching user found
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: "$totalAmount" },
+          totalPaidAmount: { $sum: "$paidAmount" },
+          pendingOrders: {
+            $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+          },
+          approvedOrders: {
+            $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] },
+          },
+          deliveredOrders: {
+            $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] },
+          },
+          completedOrders: {
+            $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
+          },
+          uniqueCustomers: { $addToSet: "$customer" },
+          lastActivityDate: { $max: "$orderDate" },
+        },
+      },
+    ];
+
+    const orphanedOrdersStats = await Order.aggregate(orphanedOrdersPipeline);
+    console.log("📊 Orphaned orders stats found:", orphanedOrdersStats);
+
+    const orphanedOrdersReport = orphanedOrdersStats.length > 0 ? {
+      _id: "orphaned-orders",
+      executiveName: "Deleted User (Orphaned)",
+      employeeId: "N/A",
+      email: "N/A",
+      phone: "N/A",
+      department: "N/A",
+      position: "N/A",
+      roleName: "Deleted User",
+      totalOrders: orphanedOrdersStats[0].totalOrders,
+      totalRevenue: Math.round(orphanedOrdersStats[0].totalRevenue * 100) / 100,
+      totalPaidAmount: Math.round(orphanedOrdersStats[0].totalPaidAmount * 100) / 100,
+      totalOutstanding: Math.round((orphanedOrdersStats[0].totalRevenue - orphanedOrdersStats[0].totalPaidAmount) * 100) / 100,
+      avgOrderValue: orphanedOrdersStats[0].totalOrders > 0 ? 
+        Math.round((orphanedOrdersStats[0].totalRevenue / orphanedOrdersStats[0].totalOrders) * 100) / 100 : 0,
+      pendingOrders: orphanedOrdersStats[0].pendingOrders,
+      approvedOrders: orphanedOrdersStats[0].approvedOrders,
+      deliveredOrders: orphanedOrdersStats[0].deliveredOrders,
+      completedOrders: orphanedOrdersStats[0].completedOrders,
+      uniqueCustomersCount: orphanedOrdersStats[0].uniqueCustomers.length,
+      conversionRate: 0,
+      lastActivityDate: orphanedOrdersStats[0].lastActivityDate,
+      daysSinceLastActivity: orphanedOrdersStats[0].lastActivityDate ? 
+        Math.round((new Date() - orphanedOrdersStats[0].lastActivityDate) / (1000 * 60 * 60 * 24)) : null,
+      daysSinceUserCreation: 0,
+    } : null;
+
+    console.log("👤 Orphaned orders report created:", orphanedOrdersReport);
+
+    // Add orphaned orders report to the results if it exists
+    if (orphanedOrdersReport) {
+      reports.push(orphanedOrdersReport);
+      console.log("✅ Added orphaned orders report to results. Total reports:", reports.length);
+    } else {
+      console.log("ℹ️ No orphaned orders found");
+    }
+
     // ✅ Summary calculation (much faster now)
     const summary = {
       totalExecutives: reports.length,
