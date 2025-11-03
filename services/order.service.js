@@ -1931,158 +1931,185 @@ class OrderService {
     };
   }
 
-  // Get order statistics (supports optional godown scoping and all order filters)
-  async getOrderStats(query = {}, currentUser) {
-    const {
-      search = "",
-      status = "",
-      deliveryStatus = "",
-      paymentStatus = "",
-      customerId = "",
-      dateFrom = "",
-      dateTo = "",
-      priority = "",
-      minAmount = "",
-      maxAmount = "",
-      godownId = "",
-      roleId = "",
-    } = query;
+// Get order statistics (supports optional godown scoping and all order filters)
+async getOrderStats(query = {}, currentUser) {
+  const {
+    search = "",
+    status = "",
+    deliveryStatus = "",
+    paymentStatus = "",
+    customerId = "",
+    dateFrom = "",
+    dateTo = "",
+    priority = "",
+    minAmount = "",
+    maxAmount = "",
+    godownId = "",
+    roleId = "",
+  } = query;
 
-    const filter = {};
+  const filter = {};
 
-    // Apply search filter
-    if (search) {
-      filter.$or = [{ orderNumber: { $regex: search, $options: "i" } }];
+  // 🔍 Search filter
+  if (search) {
+    filter.$or = [{ orderNumber: { $regex: search, $options: "i" } }];
+  }
+
+  // ⚙️ Common filters
+  if (status) filter.status = status;
+  if (deliveryStatus) filter.deliveryStatus = deliveryStatus;
+  if (paymentStatus) filter.paymentStatus = paymentStatus;
+  if (customerId) filter.customer = new mongoose.Types.ObjectId(customerId);
+  if (priority) filter.priority = priority;
+
+  // 💰 Amount range
+  if (minAmount || maxAmount) {
+    filter.totalAmount = {};
+    if (minAmount) filter.totalAmount.$gte = parseFloat(minAmount);
+    if (maxAmount) filter.totalAmount.$lte = parseFloat(maxAmount);
+  }
+
+  // 📅 Date range
+  if (dateFrom || dateTo) {
+    filter.orderDate = {};
+    if (dateFrom) filter.orderDate.$gte = new Date(dateFrom);
+    if (dateTo) {
+      const endDate = new Date(dateTo);
+      endDate.setHours(23, 59, 59, 999);
+      filter.orderDate.$lte = endDate;
     }
+  }
 
-    // Apply status filter
-    if (status) {
-      filter.status = status;
-    }
-
-    // Apply delivery status filter
-    if (deliveryStatus) {
-      filter.deliveryStatus = deliveryStatus;
-    }
-
-    // Apply payment status filter
-    if (paymentStatus) {
-      filter.paymentStatus = paymentStatus;
-    }
-
-    // Apply customer filter
-    if (customerId) {
-      filter.customer = new mongoose.Types.ObjectId(customerId);
-    }
-
-    // Apply priority filter
-    if (priority) {
-      filter.priority = priority;
-    }
-
-    // Apply amount range filter
-    if (minAmount || maxAmount) {
-      filter.totalAmount = {};
-      if (minAmount) {
-        filter.totalAmount.$gte = parseFloat(minAmount);
-      }
-      if (maxAmount) {
-        filter.totalAmount.$lte = parseFloat(maxAmount);
-      }
-    }
-
-    // Apply date range filter
-    if (dateFrom || dateTo) {
-      filter.orderDate = {};
-      if (dateFrom) {
-        filter.orderDate.$gte = new Date(dateFrom);
-      }
-      if (dateTo) {
-        // Set end date to end of day (23:59:59.999) to include all orders on that date
-        const endDate = new Date(dateTo);
-        endDate.setHours(23, 59, 59, 999);
-        filter.orderDate.$lte = endDate;
-      }
-    }
-
-    // Priority 1: If godownId is provided and not empty, use it
-    if (godownId && godownId !== "") {
-      filter.godown = new mongoose.Types.ObjectId(godownId);
-    } else if (currentUser && currentUser.role) {
-      // Role-based filtering for non-super admins
-      const roleName = currentUser.role.name;
-
-      if (roleName === "Driver") {
-        // Drivers can only see stats for orders assigned to them
-        filter["driverAssignment.driver"] = currentUser._id;
-      } else if (["Sales Executive", "Staff"].includes(roleName)) {
-        // Sales Executive and Staff: only show their own order stats
-        filter.createdBy = currentUser._id;
-      } else if (roleName !== "Super Admin") {
-        // Manager, Admin, and other roles: use godown hierarchy
-        // Priority 2: Check for user's accessible godowns
-        if (
-          currentUser.accessibleGodowns &&
-          currentUser.accessibleGodowns.length > 0
-        ) {
-          // Convert to ObjectIds if needed
-          const accessibleIds = currentUser.accessibleGodowns.map((godown) =>
-            typeof godown === "object" && godown._id ? godown._id : godown
-          );
-          filter.godown = { $in: accessibleIds };
-        }
-        // Priority 3: Check for user's primary godown
-        else if (currentUser.primaryGodown) {
-          const primaryGodownId =
-            typeof currentUser.primaryGodown === "object" &&
-              currentUser.primaryGodown._id
-              ? currentUser.primaryGodown._id
-              : currentUser.primaryGodown;
-          filter.godown = primaryGodownId;
-        }
-        // Priority 4: If no godowns assigned, show only their own stats as fallback
-        else {
-          filter.createdBy = currentUser._id;
-        }
-      }
-      // Super Admin: No godown filter applied (shows all godowns)
-    }
-    console.log(filter);
-
-    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
-    const startOfMonth = new Date(
-      new Date().getFullYear(),
-      new Date().getMonth(),
-      1
-    );
-
-    // Helper function to create aggregation pipeline with role filter
-    const createPipeline = (matchConditions) => {
-      const pipeline = [{ $match: matchConditions }];
-
-      if (roleId) {
-        pipeline.push(
-          {
-            $lookup: {
-              from: "users",
-              localField: "createdBy",
-              foreignField: "_id",
-              as: "createdByUser",
-            },
-          },
-          {
-            $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true },
-          },
-          {
-            $match: { "createdByUser.role": new mongoose.Types.ObjectId(roleId) },
-          }
+  // 🏬 Godown or role-based scoping
+  if (godownId && godownId !== "") {
+    filter.godown = new mongoose.Types.ObjectId(godownId);
+  } else if (currentUser && currentUser.role) {
+    const roleName = currentUser.role.name;
+    if (roleName === "Driver") {
+      filter["driverAssignment.driver"] = currentUser._id;
+    } else if (["Sales Executive", "Staff"].includes(roleName)) {
+      filter.createdBy = currentUser._id;
+    } else if (roleName !== "Super Admin") {
+      if (
+        currentUser.accessibleGodowns &&
+        currentUser.accessibleGodowns.length > 0
+      ) {
+        const accessibleIds = currentUser.accessibleGodowns.map((godown) =>
+          typeof godown === "object" && godown._id ? godown._id : godown
         );
+        filter.godown = { $in: accessibleIds };
+      } else if (currentUser.primaryGodown) {
+        const primaryGodownId =
+          typeof currentUser.primaryGodown === "object" &&
+          currentUser.primaryGodown._id
+            ? currentUser.primaryGodown._id
+            : currentUser.primaryGodown;
+        filter.godown = primaryGodownId;
+      } else {
+        filter.createdBy = currentUser._id;
       }
+    }
+  }
 
-      return pipeline;
-    };
+  const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
+  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
-    const [
+  // Helper function to create aggregation pipeline with role filter
+  const createPipeline = (matchConditions) => {
+    const pipeline = [{ $match: matchConditions }];
+
+    if (roleId) {
+      pipeline.push(
+        {
+          $lookup: {
+            from: "users",
+            localField: "createdBy",
+            foreignField: "_id",
+            as: "createdByUser",
+          },
+        },
+        { $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true } },
+        { $match: { "createdByUser.role": new mongoose.Types.ObjectId(roleId) } }
+      );
+    }
+
+    return pipeline;
+  };
+
+  // 🧮 Aggregations
+  const [
+    totalOrders,
+    totalVisits,
+    pendingOrders,
+    approvedOrders,
+    completedOrders,
+    rejectedOrders,
+    todayOrders,
+    todayVisits,
+    monthlyRevenue,
+  ] = await Promise.all([
+    Order.aggregate([
+      ...createPipeline({ ...filter, type: "order" }),
+      { $count: "count" },
+    ]).then((res) => res[0]?.count || 0),
+
+    Order.aggregate([
+      ...createPipeline({ ...filter, type: "visit" }),
+      { $count: "count" },
+    ]).then((res) => res[0]?.count || 0),
+
+    Order.aggregate([
+      ...createPipeline({ ...filter, type: "order", status: "pending" }),
+      { $count: "count" },
+    ]).then((res) => res[0]?.count || 0),
+
+    Order.aggregate([
+      ...createPipeline({ ...filter, type: "order", status: "approved" }),
+      { $count: "count" },
+    ]).then((res) => res[0]?.count || 0),
+
+    Order.aggregate([
+      ...createPipeline({ ...filter, type: "order", status: "completed" }),
+      { $count: "count" },
+    ]).then((res) => res[0]?.count || 0),
+
+    Order.aggregate([
+      ...createPipeline({ ...filter, type: "order", status: "rejected" }),
+      { $count: "count" },
+    ]).then((res) => res[0]?.count || 0),
+
+    Order.aggregate([
+      ...createPipeline({ ...filter, type: "order", orderDate: { $gte: startOfToday } }),
+      { $count: "count" },
+    ]).then((res) => res[0]?.count || 0),
+
+    Order.aggregate([
+      ...createPipeline({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }),
+      { $count: "count" },
+    ]).then((res) => res[0]?.count || 0),
+
+    // 💵 Monthly revenue — apply all filters + default monthly range if no dateFrom/dateTo
+    (() => {
+      const revenueFilter = { ...filter, type: "order" };
+
+      return Order.aggregate([
+        ...createPipeline({
+          ...revenueFilter,
+          status: status
+            ? status
+            : { $in: ["pending", "approved", "delivered", "out_for_delivery", "driver_assigned"] },
+          deliveryStatus: deliveryStatus
+            ? deliveryStatus
+            : { $in: ["pending", "delivered"] },
+        }),
+        { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+      ]).then((res) => res[0]?.total || 0);
+    })(),
+  ]);
+
+  return {
+    success: true,
+    data: {
       totalOrders,
       totalVisits,
       pendingOrders,
@@ -2092,74 +2119,10 @@ class OrderService {
       todayOrders,
       todayVisits,
       monthlyRevenue,
-    ] = await Promise.all([
-      // Use aggregation for role filtering, fallback to countDocuments if no role filter
-      roleId
-        ? Order.aggregate([...createPipeline({ ...filter, type: "order" }), { $count: "count" }])
-          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
-        : Order.countDocuments({ ...filter, type: "order" }),
+    },
+  };
+}
 
-      roleId
-        ? Order.aggregate([...createPipeline({ ...filter, type: "visit" }), { $count: "count" }])
-          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
-        : Order.countDocuments({ ...filter, type: "visit" }),
-
-      roleId
-        ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "pending" }), { $count: "count" }])
-          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
-        : Order.countDocuments({ ...filter, type: "order", status: "pending" }),
-
-      roleId
-        ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "approved" }), { $count: "count" }])
-          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
-        : Order.countDocuments({ ...filter, type: "order", status: "approved" }),
-
-      roleId
-        ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "completed" }), { $count: "count" }])
-          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
-        : Order.countDocuments({ ...filter, type: "order", status: "completed" }),
-
-      roleId
-        ? Order.aggregate([...createPipeline({ ...filter, type: "order", status: "rejected" }), { $count: "count" }])
-          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
-        : Order.countDocuments({ ...filter, type: "order", status: "rejected" }),
-
-      roleId
-        ? Order.aggregate([...createPipeline({ ...filter, type: "order", orderDate: { $gte: startOfToday } }), { $count: "count" }])
-          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
-        : Order.countDocuments({ ...filter, type: "order", orderDate: { $gte: startOfToday } }),
-
-      roleId
-        ? Order.aggregate([...createPipeline({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }), { $count: "count" }])
-          .then((result) => (Array.isArray(result) && result[0]?.count) || 0)
-        : Order.countDocuments({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }),
-
-      Order.aggregate([
-        ...createPipeline({
-          type: "order",
-          ...filter,
-          status: { $in: ["pending", "approved","delivered","out_for_delivery","driver_assigned"] },
-        deliveryStatus: { $in: ["pending", "delivered"] },
-        }),
-        { $group: { _id: null, total: { $sum: "$totalAmount" } } },
-      ]).then((result) => (Array.isArray(result) && result[0]?.total) || 0),
-    ]);
-
-    return {
-      success: true,
-      data: {
-        totalOrders,
-        totalVisits,
-        pendingOrders,
-        approvedOrders,
-        completedOrders,
-        rejectedOrders,
-        todayOrders,
-        todayVisits,
-        monthlyRevenue,
-      },
-    };
-  }
 
   // Quick-order: expose catalog
   async getQuickProducts(requestingUser) {
