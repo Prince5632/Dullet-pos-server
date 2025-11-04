@@ -82,7 +82,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       code: "JAL",
       location: { city: "Jalandhar", state: "Punjab" },
       contact: {
-        phone: "+91 76969 83151",
+        phone: "+91 76969 83151,+91 76969 57240",
         email: "dulletindustries@gmail.com",
       },
     },
@@ -91,7 +91,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       code: "LDH",
       location: { city: "Ludhiana", state: "Punjab" },
       contact: {
-        phone: "+91 76969 83151",
+        phone: "+91 76969 83151,+91 76969 57240",
         email: "dulletindustries@gmail.com",
       },
     },
@@ -100,7 +100,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       code: "FGS",
       location: { city: "Fatehgarh Sahib", state: "Punjab" },
       contact: {
-        phone: "+91 90419 83039",
+        phone: "+91 76967 42284",
         email: "dulletindustries@gmail.com",
       },
     },
@@ -109,7 +109,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       code: "JAM",
       location: { city: "Jammu", state: "Jammu & Kashmir" },
       contact: {
-        phone: "+91 76969 83151",
+        phone: "+91 76969 83151,+91 76969 57240",
         email: "dulletindustries@gmail.com",  
       },
     },
@@ -118,7 +118,7 @@ godownSchema.statics.seedDefaultGodowns = async function () {
       code: "AMB",
       location: { city: "Ambala", state: "Haryana" },
       contact: {
-        phone: "+91 90565 48729,+91 76967 42284",
+        phone: "+91 76967 42284",
         email: "dulletindustries@gmail.com", 
       },
     },
