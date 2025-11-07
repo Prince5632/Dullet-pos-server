@@ -7,7 +7,7 @@ const orderSchema = require("../models/order.schema");
 class CustomerService {
   // Get all customers with pagination and filtering
   async getAllCustomers(query = {}, requestingUser = null) {
-    const {
+    let {
       page = 1,
       limit = 10,
       search = "",
@@ -24,6 +24,9 @@ class CustomerService {
 
     // Build filter object
     const filter = {};
+    if(limit === 1000 || limit === "1000"){
+      limit = 6000
+    }
 
     // Store search conditions separately to combine with godown filters later
     let searchConditions = null;
