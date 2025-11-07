@@ -2599,22 +2599,22 @@ async getOrderStats(query = {}, currentUser) {
 
       if (existingRecord) {
         // Update existing record with new calculated values
-        // const updatedRecord = await DeliveryTimePdfChanges.findOneAndUpdate(
-        //   { orderId },
-        //   deliveryTimePdfData,
-        //   { new: true }
-        // )
-        //   .populate("orderId", "orderNumber type")
-        //   .populate("customerId", "name email phone")
-        //   .populate("recordedBy", "name email");
-  const existingRecord = await DeliveryTimePdfChanges.findOne({ orderId })
+        const updatedRecord = await DeliveryTimePdfChanges.findOneAndUpdate(
+          { orderId },
+          deliveryTimePdfData,
+          { new: true }
+        )
           .populate("orderId", "orderNumber type")
           .populate("customerId", "name email phone")
           .populate("recordedBy", "name email");
+  // const existingRecord = await DeliveryTimePdfChanges.findOne({ orderId })
+  //         .populate("orderId", "orderNumber type")
+  //         .populate("customerId", "name email phone")
+  //         .populate("recordedBy", "name email");
 
         return {
           success: true,
-          data: existingRecord,
+          data: updatedRecord,
         };
       } else {
         // Create new record if not exists
