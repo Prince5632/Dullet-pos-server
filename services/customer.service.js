@@ -24,9 +24,7 @@ class CustomerService {
 
     // Build filter object
     const filter = {};
-    if(limit === 1000 || limit === "1000"){
-      limit = 6000
-    }
+    
 
     // Store search conditions separately to combine with godown filters later
     let searchConditions = null;
