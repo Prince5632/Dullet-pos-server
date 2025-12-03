@@ -624,7 +624,7 @@ exports.getCustomerReports = async (
       matchCriteria.deliveryStatus = deliveryStatus;
     } else if (!status) {
       // Only apply default delivery status filter if no status filter is provided
-      matchCriteria.deliveryStatus = { $nin: ["cancelled", "not_delivered"] };
+      // matchCriteria.deliveryStatus = { $nin: ["cancelled"] };
     }
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
@@ -643,59 +643,122 @@ exports.getCustomerReports = async (
 
     // Apply godown filtering
     if (godownId) {
-      matchCriteria.godown = new mongoose.Types.ObjectId(godownId);
-    } else if (
-      requestingUser &&
-      (requestingUser.primaryGodown ||
-        (requestingUser.accessibleGodowns &&
-          requestingUser.accessibleGodowns.length > 0))
-    ) {
-      // Apply user-specific godown filtering only if no specific godown is requested
-      const allowedGodowns = [];
-
-      if (requestingUser.primaryGodown) {
-        allowedGodowns.push(
-          requestingUser.primaryGodown._id || requestingUser.primaryGodown
-        );
-      }
-
-      if (
-        requestingUser.accessibleGodowns &&
-        requestingUser.accessibleGodowns.length > 0
-      ) {
-        allowedGodowns.push(
-          ...requestingUser.accessibleGodowns.map((g) => g._id || g)
-        );
-      }
-
-      if (allowedGodowns.length > 0) {
-        matchCriteria.godown = {
-          $in: allowedGodowns.map((id) => new mongoose.Types.ObjectId(id)),
-        };
-      }
-    }
-
+      const customerIds = await Customer.find({assignedGodownId: new mongoose.Types.ObjectId(godownId)})
+      matchCriteria.customer = {$in:customerIds?.map(c=>c?._id)}
+    } 
     // Aggregate orders by customer
     const allReports = await Order.aggregate([
       { $match: matchCriteria },
-      {
-        $group: {
-          _id: "$customer",
-          totalOrders: { $sum: 1 },
-          totalSpent: { $sum: "$totalAmount" },
-          totalPaid: { $sum: "$paidAmount" },
-          avgOrderValue: { $avg: "$totalAmount" },
-          lastOrderDate: { $max: "$orderDate" },
-          firstOrderDate: { $min: "$orderDate" },
-          pendingOrders: {
-            $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+   {
+
+  $group: {
+    _id: "$customer",
+
+    totalOrders: { $sum: 1 },
+
+    totalSpent: {
+      $sum: {
+        $cond: [
+          {
+            $or: [
+              { $in: ["$status", ["cancelled", "rejected"]] },
+              { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+            ]
           },
-          completedOrders: {
-            $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
+          0,
+          "$totalAmount"
+        ]
+      }
+    },
+
+    totalPaid: {
+      $sum: {
+        $cond: [
+          {
+            $or: [
+              { $in: ["$status", ["cancelled", "rejected"]] },
+              { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+            ]
           },
-          orderStatuses: { $push: "$status" },
-        },
-      },
+          0,
+          "$paidAmount"
+        ]
+      }
+    },
+
+    /** NEW — VALID ORDERS SUM **/
+    validOrderAmountSum: {
+      $sum: {
+        $cond: [
+          {
+            $or: [
+              { $in: ["$status", ["cancelled", "rejected"]] },
+              { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+            ]
+          },
+          0,
+          "$totalAmount"
+        ]
+      }
+    },
+
+    /** NEW — VALID ORDERS COUNT **/
+    validOrderCount: {
+      $sum: {
+        $cond: [
+          {
+            $or: [
+              { $in: ["$status", ["cancelled", "rejected"]] },
+              { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+            ]
+          },
+          0,
+          1
+        ]
+      }
+    },
+
+    /** NEW — TOTAL ATTA SOLD (IN KG) **/
+    totalAttaKg: {
+      $sum: {
+        $cond: [
+          {
+            $or: [
+              { $in: ["$status", ["cancelled", "rejected"]] },
+              { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+            ]
+          },
+          0,
+          {
+            $sum: {
+              $map: {
+                input: "$items",
+                as: "item",
+                in: "$$item.quantity"
+              }
+            }
+          }
+        ]
+      }
+    },
+
+    lastOrderDate: { $max: "$orderDate" },
+    firstOrderDate: { $min: "$orderDate" },
+
+    pendingOrders: {
+      $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+    },
+
+    completedOrders: {
+      $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] },
+    },
+
+    orderStatuses: { $push: "$status" }
+  }
+
+
+},
+
       {
         $lookup: {
           from: "customers",
@@ -721,13 +784,24 @@ exports.getCustomerReports = async (
           isActive: "$customerInfo.isActive",
           creditLimit: "$customerInfo.creditLimit",
           outstandingAmount: "$customerInfo.outstandingAmount",
-          totalOrders: 1,
+          totalOrders: "$totalOrders",
           totalSpent: { $round: ["$totalSpent", 2] },
           totalPaid: { $round: ["$totalPaid", 2] },
           totalOutstanding: {
             $round: [{ $subtract: ["$totalSpent", "$totalPaid"] }, 2],
           },
-          avgOrderValue: { $round: ["$avgOrderValue", 2] },
+          avgOrderValue: { 
+            $round: [
+              { 
+                $cond: [
+                  { $eq: ["$validOrderCount", 0] },
+                  0,
+                  { $divide: ["$totalSpent", "$validOrderCount"] }
+                ]
+              }, 
+              2
+            ] 
+          },
           lastOrderDate: 1,
           firstOrderDate: 1,
           daysSinceLastOrder: {
@@ -743,6 +817,8 @@ exports.getCustomerReports = async (
           },
           pendingOrders: 1,
           completedOrders: 1,
+          validOrderCount: 1,
+          totalAttaKg: { $round: ["$totalAttaKg", 2] },
           lifetimeValue: { $round: ["$totalSpent", 2] },
         },
       },
@@ -751,7 +827,8 @@ exports.getCustomerReports = async (
       },
     ]);
 
-    // Calculate summary statistics from ALL reports (before pagination)
+  
+    const customersWithAvgOrderValue = allReports?.filter((o)=>o?.avgOrderValue > 0)
     const summary = {
       totalCustomers: allReports.length,
       activeCustomers: allReports.filter((r) => r.daysSinceLastOrder <= 30).length,
@@ -764,9 +841,13 @@ exports.getCustomerReports = async (
         0
       ),
       avgCustomerValue:
-        allReports.length > 0
-          ? allReports.reduce((sum, r) => sum + r.lifetimeValue, 0) /
-            allReports.length
+        customersWithAvgOrderValue.length > 0
+          ? customersWithAvgOrderValue.reduce((sum, r) => sum + (r.avgOrderValue || 0), 0) /
+            customersWithAvgOrderValue.length
+          : 0,
+      totalKg : 
+       customersWithAvgOrderValue.length > 0
+          ? customersWithAvgOrderValue.reduce((sum, r) => sum + (r.totalAttaKg || 0), 0)
           : 0,
     };
 
@@ -832,7 +913,7 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
       orderMatchCriteria.deliveryStatus = deliveryStatus;
     } else if (!status) {
       // Only apply default delivery status filter if no status filter is provided
-      orderMatchCriteria.deliveryStatus = { $nin: ["cancelled", "not_delivered"] };
+      // orderMatchCriteria.deliveryStatus = { $nin: ["cancelled", ] }; 
     }
     
     if (godownId) {

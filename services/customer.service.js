@@ -487,6 +487,8 @@ class CustomerService {
       const filter = {
         customer: customerId,
         type: "order",
+        status : {$nin:["cancelled","rejected"]},
+        deliveryStatus : {$nin:["cancelled"]}
       };
 
       // Get other orders for this customer
