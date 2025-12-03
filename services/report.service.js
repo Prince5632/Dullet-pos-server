@@ -132,7 +132,7 @@ exports.getSalesExecutiveReports = async (
                 $expr: { $eq: ["$createdBy", "$$userId"] },
                 type: type || "order",
                 status: { $nin: ["cancelled", "rejected"] },
-                deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
+                deliveryStatus: { $nin: ["cancelled", ] },
                 ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {}),
                 ...(dateRange && (dateRange.startDate || dateRange.endDate)
                   ? {
@@ -277,7 +277,7 @@ exports.getSalesExecutiveReports = async (
           ],
           type: type || "order",
           status: { $nin: ["cancelled", "rejected"] },
-          deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
+          deliveryStatus: { $nin: ["cancelled"] },
           ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {}),
           ...(dateRange && (dateRange.startDate || dateRange.endDate)
             ? {
@@ -360,7 +360,7 @@ exports.getSalesExecutiveReports = async (
         $match: {
           type: type || "order",
           status: { $nin: ["cancelled", "rejected"] },
-          deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
+          deliveryStatus: { $nin: ["cancelled"] },
           createdBy: { $exists: true, $ne: null },
           ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {}),
           ...(dateRange && (dateRange.startDate || dateRange.endDate)
@@ -490,7 +490,7 @@ exports.getGodownSalesReports = async (
     const matchCriteria = {
       type: "order",
       status: { $nin: ["cancelled", "rejected"] },
-      deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
+      deliveryStatus: { $nin: ["cancelled"] },
     };
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
@@ -1085,7 +1085,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
       createdBy: new mongoose.Types.ObjectId(userId),
       type: type || "order",
       status: { $nin: ["cancelled", "rejected"] },
-      deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
+      deliveryStatus: { $nin: ["cancelled"] },
     };
 
     // Build match criteria for counting orders (include all orders)
@@ -1537,7 +1537,7 @@ exports.getCustomerPurchaseDetail = async (customerId, filters = {}) => {
       customer: new mongoose.Types.ObjectId(customerId),
       type: "order",
       status: { $nin: ["cancelled", "rejected"] },
-      deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
+      deliveryStatus: { $nin: ["cancelled",] },
     };
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {

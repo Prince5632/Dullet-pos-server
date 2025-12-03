@@ -1162,7 +1162,7 @@ const getGodownsWithOrderCounts = async (req, res) => {
           $nin: ["rejected", "cancelled"]
         }
         countFilter.deliveryStatus = {
-          $nin: ["not_delivered", "cancelled"]
+          $nin: [ "cancelled"]
         }
       }
       // Base filters for orders and visits
@@ -1342,7 +1342,7 @@ const getGodownsWithOrderCounts = async (req, res) => {
       const totalOrdersExcludingCancelledRejected = await Order.countDocuments({
         type: "order",
         status: { $nin: ["cancelled", "rejected"] },
-        deliveryStatus: { $nin: ["cancelled", "not_delivered"] }
+        deliveryStatus: { $nin: ["cancelled"] }
       });
       console.log("🔍 DEBUG - Total orders in DB with type='order':", totalOrdersInDB);
       console.log("🔍 DEBUG - Total orders excluding cancelled/rejected:", totalOrdersExcludingCancelledRejected);
