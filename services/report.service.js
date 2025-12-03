@@ -1074,8 +1074,14 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
       throw new Error("User not found");
     }
 
-    // Build match criteria
-    const matchCriteria = {
+    // Build match criteria for order listing (include cancelled orders)
+    const listingMatchCriteria = {
+      createdBy: new mongoose.Types.ObjectId(userId),
+      type: type || "order",
+    };
+
+    // Build match criteria for metrics (exclude cancelled orders from revenue calculations)
+    const metricsMatchCriteria = {
       createdBy: new mongoose.Types.ObjectId(userId),
       type: type || "order",
       status: { $nin: ["cancelled", "rejected"] },
@@ -1083,105 +1089,94 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
     };
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
-      matchCriteria.orderDate = {};
+      const dateFilter = {};
       if (dateRange.startDate) {
-        matchCriteria.orderDate.$gte = dateRange.startDate;
+        dateFilter.$gte = dateRange.startDate;
       }
       if (dateRange.endDate) {
-        matchCriteria.orderDate.$lte = dateRange.endDate;
+        dateFilter.$lte = dateRange.endDate;
       }
+      listingMatchCriteria.orderDate = dateFilter;
+      metricsMatchCriteria.orderDate = dateFilter;
     }
 
-    // Get orders
-    const orders = await Order.find(matchCriteria)
-      .populate("customer", "businessName customerId phone city")
+    // Get orders for listing (include cancelled orders, only return required fields)
+    const orders = await Order.find(listingMatchCriteria)
+      .select("_id type status deliveryStatus orderNumber orderDate createdAt totalAmount capturedImage customer")
+      .populate("customer", "_id businessName")
       .sort({ orderDate: -1 })
       .limit(100);
 
     // Enrich recent orders with attaKg (normalized KG for all items)
-    const recentOrders = orders.map((doc) => {
+    const recentOrders = await Promise.all(orders.map(async (doc) => {
       const order = doc.toObject();
-      const items = Array.isArray(order.items) ? order.items : [];
+      
+      // Fetch full order with items for attaKg calculation
+      const fullOrder = await Order.findById(order._id).select('items');
       let totalKg = 0;
-      console.log(
-        `Processing order ${order.orderNumber} with ${items.length} items`
-      );
+      
+      if (fullOrder && fullOrder.items) {
+        const items = Array.isArray(fullOrder.items) ? fullOrder.items : [];
+        
+        for (const item of items) {
+          const unit = (item?.unit || "").toString().trim();
+          const quantity = Number(item?.quantity || 0);
 
-      for (const item of items) {
-        const name = (item?.productName || "").toString().trim();
-        const unit = (item?.unit || "").toString().trim();
-        const quantity = Number(item?.quantity || 0);
+          // Skip if no quantity
+          if (quantity <= 0) {
+            continue;
+          }
 
-        console.log(`Item: "${name}", Unit: "${unit}", Quantity: ${quantity}`);
+          let kg = 0;
 
-        // Skip if no quantity
-        if (quantity <= 0) {
-          console.log(`Skipping item with invalid quantity: ${quantity}`);
-          continue;
-        }
+          // Convert to KG based on unit
+          switch (unit.toUpperCase()) {
+            case "KG":
+              kg = quantity;
+              break;
+            case "QUINTAL":
+              kg = quantity * 100;
+              break;
+            case "TON":
+              kg = quantity * 1000;
+              break;
+            case "BAGS":
+              const pack = (item?.packaging || "").toString();
+              let bagKg = 0;
 
-        let kg = 0;
-
-        // Convert to KG based on unit
-        switch (unit.toUpperCase()) {
-          case "KG":
-            kg = quantity;
-            break;
-          case "QUINTAL":
-            kg = quantity * 100;
-            break;
-          case "TON":
-            kg = quantity * 1000;
-            break;
-          case "BAGS":
-            const pack = (item?.packaging || "").toString();
-            let bagKg = 0;
-
-            // Try to extract weight from packaging string
-            if (pack) {
-              if (pack.includes("5kg") || pack.includes("5 kg")) bagKg = 5;
-              else if (pack.includes("10kg") || pack.includes("10 kg"))
-                bagKg = 10;
-              else if (pack.includes("25kg") || pack.includes("25 kg"))
-                bagKg = 25;
-              else if (pack.includes("40kg") || pack.includes("40 kg"))
-                bagKg = 40;
-              else if (pack.includes("50kg") || pack.includes("50 kg"))
-                bagKg = 50;
-              else {
-                // Try to extract number followed by kg
-                const match = pack.match(/(\d+)\s*kg/i);
-                if (match) bagKg = Number(match[1]);
+              // Try to extract weight from packaging string
+              if (pack) {
+                if (pack.includes("5kg") || pack.includes("5 kg")) bagKg = 5;
+                else if (pack.includes("10kg") || pack.includes("10 kg")) bagKg = 10;
+                else if (pack.includes("25kg") || pack.includes("25 kg")) bagKg = 25;
+                else if (pack.includes("40kg") || pack.includes("40 kg")) bagKg = 40;
+                else if (pack.includes("50kg") || pack.includes("50 kg")) bagKg = 50;
+                else {
+                  // Try to extract number followed by kg
+                  const match = pack.match(/(\d+)\s*kg/i);
+                  if (match) bagKg = Number(match[1]);
+                }
               }
-            }
 
-            // Default bag weight if not specified (common 50kg bags for flour)
-            if (bagKg === 0) {
-              bagKg = 50; // Default assumption for flour bags
-              console.log(
-                `Using default bag weight: ${bagKg}kg for packaging: "${pack}"`
-              );
-            }
+              // Default bag weight if not specified (common 50kg bags for flour)
+              if (bagKg === 0) {
+                bagKg = 50; // Default assumption for flour bags
+              }
 
-            kg = quantity * bagKg;
-            console.log(
-              `Bags calculation: ${quantity} bags × ${bagKg}kg = ${kg}kg (packaging: "${pack}")`
-            );
-            break;
-          default:
-            console.log(`Unknown unit: "${unit}", treating as KG`);
-            kg = quantity; // Default to treating as KG
-            break;
+              kg = quantity * bagKg;
+              break;
+            default:
+              kg = quantity; // Default to treating as KG
+              break;
+          }
+
+          totalKg += kg;
         }
-
-        console.log(`Item "${name}" contributes: ${kg}kg`);
-        totalKg += kg;
       }
 
       order.attaKg = Number(totalKg.toFixed(2));
-      console.log(`Order ${order.orderNumber} total attaKg: ${order.attaKg}`);
       return order;
-    });
+    }));
 
     // Get performance metrics
     let metrics;
@@ -1194,13 +1189,13 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
 
       // Get total visits today
       const todayVisitsCount = await Order.countDocuments({
-        ...matchCriteria,
+        ...metricsMatchCriteria,
         orderDate: { $gte: today, $lt: tomorrow },
       });
 
       // Calculate unique locations and other visit metrics
       const visitMetrics = await Order.aggregate([
-        { $match: matchCriteria },
+        { $match: metricsMatchCriteria },
         {
           $group: {
             _id: null,
@@ -1273,7 +1268,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
     } else {
       // Order-specific metrics (existing logic)
       const orderMetrics = await Order.aggregate([
-        { $match: matchCriteria },
+        { $match: metricsMatchCriteria },
         {
           $group: {
             _id: null,
@@ -1299,7 +1294,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
 
     // Get monthly trend
     const monthlyTrend = await Order.aggregate([
-      { $match: matchCriteria },
+      { $match: metricsMatchCriteria },
       {
         $group: {
           _id: {
@@ -1314,9 +1309,9 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
       { $limit: 12 },
     ]);
 
-    // Get top customers
+    // Get top customers (include all orders to match order listing)
     const topCustomers = await Order.aggregate([
-      { $match: matchCriteria },
+      { $match: listingMatchCriteria }, // Use listingMatchCriteria to include all orders
       {
         $group: {
           _id: "$customer",
@@ -1325,7 +1320,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
         },
       },
       { $sort: { totalSpent: -1 } },
-      { $limit: 10 },
+      { $limit: 50 }, // Increased limit from 10 to 50 to show more customers
       {
         $lookup: {
           from: "customers",
@@ -1338,8 +1333,9 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
     ]);
 
     // Compute total sales stats for ALL items (normalize to KG)
+    // Use a different approach - first get KG per order, then sum with order totals
     const attaTotalsAgg = await Order.aggregate([
-      { $match: matchCriteria },
+      { $match: metricsMatchCriteria },
       { $unwind: "$items" },
       {
         $addFields: {
@@ -1422,126 +1418,22 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
               default: "$items.quantity",
             },
           },
+        },
+      },
+      {
+        $group: {
+          _id: "$_id", // Group by order ID
+          orderKg: { $sum: "$itemKg" },
+          orderTotal: { $first: "$totalAmount" }, // Use order total amount
         },
       },
       {
         $group: {
           _id: null,
-          totalKg: { $sum: "$itemKg" },
-          totalAmount: { $sum: "$items.totalAmount" },
+          totalKg: { $sum: "$orderKg" },
+          totalAmount: { $sum: "$orderTotal" }, // Sum of order totals (same as revenue)
         },
       },
-    ]);
-
-    const attaByGrade = await Order.aggregate([
-      { $match: matchCriteria },
-      { $unwind: "$items" },
-      {
-        $addFields: {
-          itemKg: {
-            $switch: {
-              branches: [
-                {
-                  case: { $eq: ["$items.unit", "KG"] },
-                  then: "$items.quantity",
-                },
-                {
-                  case: { $eq: ["$items.unit", "Quintal"] },
-                  then: { $multiply: ["$items.quantity", 100] },
-                },
-                {
-                  case: { $eq: ["$items.unit", "Ton"] },
-                  then: { $multiply: ["$items.quantity", 1000] },
-                },
-                {
-                  case: { $eq: ["$items.unit", "Bags"] },
-                  then: {
-                    $multiply: [
-                      "$items.quantity",
-                      {
-                        $switch: {
-                          branches: [
-                            {
-                              case: {
-                                $regexMatch: {
-                                  input: "$items.packaging",
-                                  regex: /5\s*kg/i,
-                                },
-                              },
-                              then: 5,
-                            },
-                            {
-                              case: {
-                                $regexMatch: {
-                                  input: "$items.packaging",
-                                  regex: /10\s*kg/i,
-                                },
-                              },
-                              then: 10,
-                            },
-                            {
-                              case: {
-                                $regexMatch: {
-                                  input: "$items.packaging",
-                                  regex: /25\s*kg/i,
-                                },
-                              },
-                              then: 25,
-                            },
-                            {
-                              case: {
-                                $regexMatch: {
-                                  input: "$items.packaging",
-                                  regex: /40\s*kg/i,
-                                },
-                              },
-                              then: 40,
-                            },
-                            {
-                              case: {
-                                $regexMatch: {
-                                  input: "$items.packaging",
-                                  regex: /50\s*kg/i,
-                                },
-                              },
-                              then: 50,
-                            },
-                          ],
-                          default: 50,
-                        },
-                      },
-                    ],
-                  },
-                },
-              ],
-              default: "$items.quantity",
-            },
-          },
-        },
-      },
-      {
-        $group: {
-          _id: "$items.grade",
-          kg: { $sum: "$itemKg" },
-          amount: { $sum: "$items.totalAmount" },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          grade: "$_id",
-          kg: { $round: ["$kg", 2] },
-          amount: { $round: ["$amount", 2] },
-          avgPricePerKg: {
-            $cond: [
-              { $gt: ["$kg", 0] },
-              { $round: [{ $divide: ["$amount", "$kg"] }, 2] },
-              0,
-            ],
-          },
-        },
-      },
-      { $sort: { amount: -1 } },
     ]);
 
     return {
@@ -1570,7 +1462,6 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
                 ).toFixed(2)
               )
             : 0,
-        byGrade: attaByGrade,
       },
     };
   } catch (error) {
