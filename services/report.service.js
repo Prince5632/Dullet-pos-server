@@ -1079,6 +1079,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
       createdBy: new mongoose.Types.ObjectId(userId),
       type: type || "order",
       status: { $nin: ["cancelled", "rejected"] },
+      deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
     };
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {

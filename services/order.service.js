@@ -643,7 +643,7 @@ class OrderService {
 
     // Update customer statistics
     await Customer.findByIdAndUpdate(orderData.customer, {
-      $inc: { totalOrders: 1, totalOrderValue: order.totalAmount },
+      $inc: { totalOrders: 1 },
       lastOrderDate: new Date(),
     });
 

@@ -290,7 +290,7 @@ class CustomerService {
         customer: customerId,
         type: "order",
         status : {$nin:["cancelled","rejected"]},
-        deliveryStatus : {$nin:["cancelled"]}
+        deliveryStatus : {$nin:["cancelled","not_delivered"]}
       };
 
       // Get other orders for this customer
@@ -488,7 +488,7 @@ class CustomerService {
         customer: customerId,
         type: "order",
         status : {$nin:["cancelled","rejected"]},
-        deliveryStatus : {$nin:["cancelled"]}
+        deliveryStatus : {$nin:["cancelled","not_delivered"]}
       };
 
       // Get other orders for this customer
