@@ -1088,6 +1088,12 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
       deliveryStatus: { $nin: ["cancelled", "not_delivered"] },
     };
 
+    // Build match criteria for counting orders (include all orders)
+    const countingMatchCriteria = {
+      createdBy: new mongoose.Types.ObjectId(userId),
+      type: type || "order",
+    };
+
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
       const dateFilter = {};
       if (dateRange.startDate) {
@@ -1098,11 +1104,12 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
       }
       listingMatchCriteria.orderDate = dateFilter;
       metricsMatchCriteria.orderDate = dateFilter;
+      countingMatchCriteria.orderDate = dateFilter;
     }
 
     // Get orders for listing (include cancelled orders, only return required fields)
     const orders = await Order.find(listingMatchCriteria)
-      .select("_id type status deliveryStatus orderNumber orderDate createdAt totalAmount capturedImage customer")
+      .select("_id type status notes deliveryStatus orderNumber orderDate createdAt totalAmount capturedImage customer")
       .populate("customer", "_id businessName")
       .sort({ orderDate: -1 })
       .limit(100);
@@ -1237,14 +1244,19 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
         {
           $addFields: {
             avgLocationsPerDay: {
-              $round: [
-                { $divide: ["$uniqueLocationsCount", "$daysDifference"] },
-                2,
-              ],
+              $divide: ["$uniqueLocationsCount", "$daysDifference"],
             },
           },
         },
       ]);
+
+      // Get total orders including cancelled/rejected
+      const totalOrdersCount = await Order.countDocuments(countingMatchCriteria);
+
+      // Update the totalOrders to include all orders
+      if (visitMetrics.length > 0) {
+        visitMetrics[0].totalOrders = totalOrdersCount;
+      }
 
       metrics = visitMetrics[0]
         ? {
@@ -1272,7 +1284,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
         {
           $group: {
             _id: null,
-            totalOrders: { $sum: 1 },
+            totalOrders: { $sum: 1 }, // This will count only non-cancelled orders, we'll update below
             totalRevenue: { $sum: "$totalAmount" },
             totalPaid: { $sum: "$paidAmount" },
             avgOrderValue: { $avg: "$totalAmount" },
@@ -1281,6 +1293,14 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
           },
         },
       ]);
+
+      // Get total orders including cancelled/rejected
+      const totalOrdersCount = await Order.countDocuments(countingMatchCriteria);
+
+      // Update the totalOrders to include all orders
+      if (orderMetrics.length > 0) {
+        orderMetrics[0].totalOrders = totalOrdersCount;
+      }
 
       metrics = orderMetrics[0] || {
         totalOrders: 0,
@@ -1293,7 +1313,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
     }
 
     // Get monthly trend
-    const monthlyTrend = await Order.aggregate([
+    const monthlyTrendRevenue = await Order.aggregate([
       { $match: metricsMatchCriteria },
       {
         $group: {
@@ -1301,13 +1321,40 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
             year: { $year: "$orderDate" },
             month: { $month: "$orderDate" },
           },
-          orders: { $sum: 1 },
           revenue: { $sum: "$totalAmount" },
+        },
+      },
+    ]);
+
+    const monthlyTrendOrders = await Order.aggregate([
+      { $match: countingMatchCriteria },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$orderDate" },
+            month: { $month: "$orderDate" },
+          },
+          orders: { $sum: 1 },
         },
       },
       { $sort: { "_id.year": -1, "_id.month": -1 } },
       { $limit: 12 },
     ]);
+
+    // Combine the data
+    const monthlyTrend = monthlyTrendOrders.map(orderData => {
+      const revenueData = monthlyTrendRevenue.find(r => 
+        r._id.year === orderData._id.year && r._id.month === orderData._id.month
+      );
+      return {
+        _id: orderData._id,
+        orders: orderData.orders,
+        revenue: revenueData?.revenue || 0,
+      };
+    }).sort((a, b) => {
+      if (a._id.year !== b._id.year) return b._id.year - a._id.year;
+      return b._id.month - a._id.month;
+    });
 
     // Get top customers (include all orders to match order listing)
     const topCustomers = await Order.aggregate([
