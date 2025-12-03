@@ -26,6 +26,7 @@ exports.getSalesExecutiveReports = async (
     const userMatch = {};
     if (userId) userMatch._id = new mongoose.Types.ObjectId(userId);
     if (department) userMatch.department = department;
+    
 
     // ✅ Godown Access Logic
     let godownAccessFilter = {};
@@ -347,11 +348,11 @@ exports.getSalesExecutiveReports = async (
 
     // Add deleted user report to the results if it exists
     if (deletedUserReport) {
+      if(!userId){
       reports.push(deletedUserReport);
-      console.log("✅ Added deleted user report to results. Total reports:", reports.length);
-    } else {
-      console.log("ℹ️ No deleted user orders found");
-    }
+
+      }
+    } 
 
     // ✅ Also check for orders where createdBy references a non-existent user
     console.log("🔍 Checking for orders with non-existent createdBy references...");
@@ -444,11 +445,11 @@ exports.getSalesExecutiveReports = async (
 
     // Add orphaned orders report to the results if it exists
     if (orphanedOrdersReport) {
+      if(!userId){
       reports.push(orphanedOrdersReport);
-      console.log("✅ Added orphaned orders report to results. Total reports:", reports.length);
-    } else {
-      console.log("ℹ️ No orphaned orders found");
-    }
+
+      }
+    } 
 
     // ✅ Summary calculation (much faster now)
     const summary = {
@@ -1092,6 +1093,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
     const countingMatchCriteria = {
       createdBy: new mongoose.Types.ObjectId(userId),
       type: type || "order",
+      status: { $nin: [ "rejected"] },
     };
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
@@ -1686,6 +1688,10 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
     }
   }
 
+  // Only preserve null arrays when NOT filtering by specific userId
+  // This prevents orphaned orders when userId filter is applied
+  const preserveNullArrays = !userId;
+  
   const pipeline = [
     { $match: matchConditions },
     {
@@ -1696,7 +1702,7 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
         as: "creator",
       },
     },
-    { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: "$creator", preserveNullAndEmptyArrays: preserveNullArrays } },
 
     // Combine firstName and lastName into fullName
     {
@@ -1830,6 +1836,10 @@ const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
     }
   }
 
+  // Only preserve null arrays when NOT filtering by specific userId
+  // This prevents orphaned orders when userId filter is applied
+  const preserveNullArrays = !userId;
+  
   const pipeline = [
     { $match: matchConditions },
     {
@@ -1840,7 +1850,7 @@ const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
         as: "creator",
       },
     },
-    { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: "$creator", preserveNullAndEmptyArrays: preserveNullArrays } },
      // Combine firstName and lastName into fullName
     {
       $addFields: {
