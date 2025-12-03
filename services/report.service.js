@@ -158,10 +158,10 @@ exports.getSalesExecutiveReports = async (
                   $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] },
                 },
                 deliveredOrders: {
-                  $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] },
+                  $sum: { $cond: [{ $eq: ["$deliveryStatus", "delivered"] }, 1, 0] },
                 },
                 completedOrders: {
-                  $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
+                  $sum: { $cond: [{ $eq: ["$deliveryStatus", "delivered"] }, 1, 0] },
                 },
                 uniqueCustomers: { $addToSet: "$customer" },
                 lastActivityDate: { $max: "$orderDate" },
@@ -303,11 +303,11 @@ exports.getSalesExecutiveReports = async (
             $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] },
           },
           deliveredOrders: {
-            $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] },
-          },
-          completedOrders: {
-            $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
-          },
+                  $sum: { $cond: [{ $eq: ["$deliveryStatus", "delivered"] }, 1, 0] },
+                },
+                completedOrders: {
+                  $sum: { $cond: [{ $eq: ["$deliveryStatus", "delivered"] }, 1, 0] },
+                },
           uniqueCustomers: { $addToSet: "$customer" },
           lastActivityDate: { $max: "$orderDate" },
         },
@@ -1654,7 +1654,7 @@ exports.getCustomerPurchaseDetail = async (customerId, filters = {}) => {
  */
 const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
   const Order = require("../models/order.schema");
-  const { dateRange, userId, department, godownId, roleIds = [], type } = filters;
+  const { dateRange, userId, department,status,deliveryStatus, godownId, roleIds = [], type } = filters;
 
   // Build match conditions
   const matchConditions = {};
@@ -1662,7 +1662,12 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
   if (type) {
     matchConditions.type = type;
   }
-
+ if(!status){
+    matchConditions.status = { $nin: ["cancelled","rejected"]}
+  }
+  if(!deliveryStatus){
+    matchConditions.deliveryStatus = { $nin: ["cancelled"]}
+  }
   if (dateRange) {
     matchConditions.orderDate = {};
     if (dateRange.startDate) matchConditions.orderDate.$gte = new Date(dateRange.startDate);
@@ -1802,13 +1807,20 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
  */
 const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
   const Order = require("../models/order.schema");
-  const { dateRange, userId, department, godownId, roleIds = [], type } = filters;
+  const { dateRange, userId, department,status,deliveryStatus, godownId, roleIds = [], type } = filters;
 
   // Build match conditions
   const matchConditions = {};
   
   if (type) {
     matchConditions.type = type;
+  }
+
+  if(!status){
+    matchConditions.status = { $nin: ["cancelled","rejected"]}
+  }
+  if(!deliveryStatus){
+    matchConditions.deliveryStatus = { $nin: ["cancelled"]}
   }
   
   if (dateRange) {
