@@ -286,10 +286,37 @@ class CustomerService {
     if (!customer) {
       throw new Error("Customer not found");
     }
+      const filter = {
+        customer: customerId,
+        type: "order",
+        status : {$nin:["cancelled","rejected"]},
+        deliveryStatus : {$nin:["cancelled"]}
+      };
+
+      // Get other orders for this customer
+      const otherCustomerOrders = await Order.find(filter)
+        .select("totalAmount paidAmount")
+        .lean();
+
+         // Safe number conversion helper
+      const safeNumber = (val) => (isNaN(Number(val)) ? 0 : Number(val));
+      const totalBalance =otherCustomerOrders.reduce((acc, ord) => {
+        const totalAmt = safeNumber(ord.totalAmount);
+        return acc + totalAmt;
+      }, 0);
+
+      // Calculate total previous balance
+      const previousBalance = otherCustomerOrders.reduce((total, ord) => {
+        const totalAmt = safeNumber(ord.totalAmount);
+        const paidAmt = safeNumber(ord.paidAmount);
+        const outstanding = Math.max(0, totalAmt - paidAmt);
+        return total + outstanding;
+      }, 0);
 
     // Calculate net balance for the customer
-    const netBalance = await this.calculateCustomerBalance(customerId);
-    customer.netBalance = netBalance;
+    customer.netBalance = previousBalance;
+    customer.totalOrders = otherCustomerOrders?.length;
+    customer.totalOrderValue = totalBalance;
 
     return {
       success: true,
