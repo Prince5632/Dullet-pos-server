@@ -916,11 +916,13 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
       // orderMatchCriteria.deliveryStatus = { $nin: ["cancelled", ] }; 
     }
     
+    // Apply godown filtering - same pattern as getCustomerReports
     if (godownId) {
-      orderMatchCriteria.godown = new mongoose.Types.ObjectId(godownId);
-    }
+      const customerIds = await Customer.find({assignedGodownId: new mongoose.Types.ObjectId(godownId)})
+      orderMatchCriteria.customer = {$in:customerIds?.map(c=>c?._id)}
+    } 
 
-    // Get last order info for all customers using aggregation (much faster)
+    // Get last order info and outstanding calculation for all customers using aggregation
     const customerLastOrders = await Order.aggregate([
       { $match: orderMatchCriteria },
       {
@@ -928,7 +930,36 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
           _id: "$customer",
           lastOrderDate: { $max: "$orderDate" },
           lastOrderNumber: { $last: "$orderNumber" },
-          lastOrderAmount: { $last: "$totalAmount" }
+          lastOrderAmount: { $last: "$totalAmount" },
+          totalOrders: { $sum: 1 },
+          totalSpent: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $in: ["$status", ["cancelled", "rejected"]] },
+                    { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+                  ]
+                },
+                0,
+                "$totalAmount"
+              ]
+            }
+          },
+          totalPaid: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $in: ["$status", ["cancelled", "rejected"]] },
+                    { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+                  ]
+                },
+                0,
+                "$paidAmount"
+              ]
+            }
+          }
         }
       }
     ]);
@@ -939,40 +970,24 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
       lastOrderMap.set(item._id.toString(), {
         lastOrderDate: item.lastOrderDate,
         lastOrderNumber: item.lastOrderNumber,
-        lastOrderAmount: item.lastOrderAmount
+        lastOrderAmount: item.lastOrderAmount,
+        totalOrders: item.totalOrders || 0,
+        totalSpent: item.totalSpent || 0,
+        totalPaid: item.totalPaid || 0,
+        calculatedOutstanding: Math.round((item.totalSpent - item.totalPaid) * 100) / 100
       });
     });
 
-    // Build customer filter
-    const customerFilter = { isActive: true };
+    // Build customer filter - get customers from the order aggregation results
+    const customerIdsFromOrders = Array.from(lastOrderMap.keys()).map(id => new mongoose.Types.ObjectId(id));
     
-    if (godownId) {
-      const godownObjectId = new mongoose.Types.ObjectId(godownId);
-      
-      // Get customers assigned to this godown
-      const assignedCustomerIds = await Customer.find({ 
-        isActive: true,
-        assignedGodownId: godownObjectId
-      }).distinct('_id');
-      
-      // Get customers who have ordered from this godown
-      const customersWithOrderIds = Array.from(lastOrderMap.keys()).map(id => new mongoose.Types.ObjectId(id));
-      
-      // Combine both sets
-      const relevantCustomerIds = new Set([
-        ...assignedCustomerIds.map(id => id.toString()),
-        ...customersWithOrderIds.map(id => id.toString())
-      ]);
-      
-      customerFilter._id = { 
-        $in: Array.from(relevantCustomerIds).map(id => new mongoose.Types.ObjectId(id)) 
-      };
-    }
-
-    // Get all active customers
-    const customers = await Customer.find(customerFilter)
-      .select('customerId businessName contactPersonName phone email customerType address totalOrders totalOrderValue outstandingAmount')
-      .lean();
+    // Get all active customers that have orders (already filtered by godown if specified)
+    const customers = await Customer.find({ 
+      _id: { $in: customerIdsFromOrders },
+      isActive: true 
+    })
+    .select('customerId businessName contactPersonName phone email customerType address')
+    .lean();
 
     // Filter inactive customers and build response
     const inactiveCustomers = [];
@@ -984,7 +999,7 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
       // Check if customer is inactive (no orders or last order before cutoff)
       if (!lastOrderDate || lastOrderDate < cutoffDate) {
         const daysSinceLastOrder = lastOrderDate
-          ? Math.floor((new Date() - lastOrderDate) / (1000 * 60 * 60 * 24))
+          ? Math.round((new Date() - lastOrderDate) / (1000 * 60 * 60 * 24))
           : null;
 
         inactiveCustomers.push({
@@ -1001,9 +1016,11 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
           lastOrderNumber: lastOrderInfo?.lastOrderNumber || null,
           lastOrderAmount: lastOrderInfo?.lastOrderAmount || 0,
           daysSinceLastOrder,
-          totalOrders: customer.totalOrders || 0,
-          totalOrderValue: customer.totalOrderValue || 0,
-          outstandingAmount: customer.outstandingAmount || 0,
+          totalOrders: lastOrderInfo?.totalOrders || 0, // Use calculated totalOrders from orders
+          totalOrderValue: lastOrderInfo?.totalSpent || 0, // Use calculated totalSpent from orders
+          outstandingAmount: lastOrderInfo?.calculatedOutstanding || 0,
+          totalSpent: lastOrderInfo?.totalSpent || 0,
+          totalPaid: lastOrderInfo?.totalPaid || 0,
         });
       }
     }
