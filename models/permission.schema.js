@@ -77,6 +77,8 @@ permissionSchema.statics.seedDefaultPermissions = async function() {
     { name: 'orders.approve', module: 'orders', action: 'approve', description: 'Approve orders' },
     { name: 'orders.manage', module: 'orders', action: 'manage', description: 'Manage order assignments and delivery workflow' },
     { name: 'orders.editPrice', module: 'orders', action: 'editPrice', description: 'Edit order price' },
+    { name: 'orders.manageStatus', module: 'orders', action: 'manageStatus', description: 'Edit order status' },
+    { name: 'orders.manageDeliveryStatus', module: 'orders', action: 'manageDeliveryStatus', description: 'Edit order deliveryStatus' },
     
     // Stock Management
     { name: 'stock.create', module: 'stock', action: 'create', description: 'Add stock entries' },
