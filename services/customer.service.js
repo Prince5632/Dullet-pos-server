@@ -35,6 +35,11 @@ class CustomerService {
         { phone: { $regex: search, $options: "i" } },
         { customerId: { $regex: search, $options: "i" } },
         { location: { $regex: search, $options: "i" } },
+        { "address.street": { $regex: search, $options: "i" } },
+        { "address.city": { $regex: search, $options: "i" } },
+        { "address.state": { $regex: search, $options: "i" } },
+        { "address.country": { $regex: search, $options: "i" } },
+        { "address.pincode": { $regex: search, $options: "i" } },
       ];
     }
 
