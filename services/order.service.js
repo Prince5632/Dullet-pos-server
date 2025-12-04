@@ -25,6 +25,8 @@ class OrderService {
     const filter = {
       customer: customerId,
       type: "order",
+      status:{$nin:["cancelled","rejected"]},
+      deliveryStatus:{$nin:["cancelled"]}
     };
 
     if (excludeOrderId) {
@@ -35,7 +37,6 @@ class OrderService {
     const otherCustomerOrders = await Order.find(filter)
       .select("totalAmount paidAmount")
       .lean();
-
     // Safe number conversion helper with 2 decimal places
     const safeNumber = (val) => {
       const num = isNaN(Number(val)) ? 0 : Number(val);
