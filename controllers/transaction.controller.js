@@ -90,8 +90,8 @@ class TransactionController {
       if (!userId) {
         return res.status(401).json(createResponse(false, 'User authentication required', null, 401));
       }
-      const { customerId, amountPaid, paymentMode, transactionDate } = req.body || {};
-      const result = await transactionService.allocateCustomerPayment({ customerId, amountPaid, paymentMode, transactionDate }, userId);
+      const { customerId, amountPaid,orderIds=[], paymentMode, transactionDate } = req.body || {};
+      const result = await transactionService.allocateCustomerPayment({ customerId, amountPaid,orderIds, paymentMode, transactionDate }, userId);
       return res.status(result.statusCode || (result.success ? 200 : 400)).json(result);
     } catch (error) {
       console.error('Error in allocateCustomerPayment controller:', error);

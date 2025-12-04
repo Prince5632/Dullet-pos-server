@@ -706,6 +706,27 @@ const updateDeliveryStatus = async (req, res) => {
   }
 };
 
+// Get customer orders with pending payments
+const getCustomerPendingOrders = async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    const result = await orderService.getCustomerPendingOrders(customerId);
+    res.status(200).json(result);
+  } catch (error) {
+    if (error.message === 'Customer not found') {
+      res.status(404).json({
+        success: false,
+        message: error.message
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+};
+
 module.exports = {
   getAllOrders,
   getOrderById,
@@ -740,6 +761,7 @@ module.exports = {
   getDeliveryTimePdfChanges,
   createDeliveryTimePdfChanges,
   getOrCreateDeliveryTimePdfChanges,
-  updateDeliveryStatus
+  updateDeliveryStatus,
+  getCustomerPendingOrders
 };
 

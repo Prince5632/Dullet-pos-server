@@ -1193,6 +1193,56 @@ router.get('/customer/:customerId/history', authenticate, authorize('orders.read
 
 /**
  * @swagger
+ * /api/orders/customer/{customerId}/pending-payments:
+ *   get:
+ *     summary: Get customer orders with pending payments
+ *     description: Get all orders for a specific customer that have pending payments (totalAmount > paidAmount)
+ *     tags: [Order Management]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: customerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Customer ID
+ *     responses:
+ *       200:
+ *         description: Customer pending orders retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       _id:
+ *                         type: string
+ *                       orderNumber:
+ *                         type: string
+ *                       totalAmount:
+ *                         type: number
+ *                       paidAmount:
+ *                         type: number
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Customer not found
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get('/customer/:customerId/pending-payments', authenticate, authorize('orders.read'), orderController.getCustomerPendingOrders);
+
+/**
+ * @swagger
  * /api/orders/stats/summary:
  *   get:
  *     summary: Get order statistics

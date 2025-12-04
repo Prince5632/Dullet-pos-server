@@ -477,6 +477,8 @@ class OrderService {
       const outstandingOrders = await Order.find({
         customer: customerId,
         type: "order", // Only consider orders, not visits
+        status: {$nin:["cancelled","rejected"]},
+        deliveryStatus:{$nin:["cancelled"]},
         paymentStatus: { $in: ["pending", "partial", "overdue"] },
       })
         .select("totalAmount paidAmount")
@@ -875,7 +877,7 @@ class OrderService {
 
     // Build filter
     const filter = { customer: customerId };
-
+    filter.type = "order"
     if (status) {
       filter.status = status;
     }
@@ -899,6 +901,7 @@ class OrderService {
     // Execute queries
     const [orders, totalOrders] = await Promise.all([
       Order.find(filter)
+        .select("orderNumber totalAmount paidAmount createdBy priority items status deliveryStatus orderDate")
         .populate("createdBy", "firstName lastName")
         .sort({ orderDate: -1 })
         .skip(skip)
@@ -2711,6 +2714,37 @@ async getOrderStats(query = {}, currentUser) {
       data: { order },
       message: `Delivery status updated to ${deliveryStatus}`,
     };
+  }
+
+  // Get customer orders with pending payments
+  async getCustomerPendingOrders(customerId) {
+    try {
+      // Validate customer
+      const customer = await Customer.findById(customerId);
+      if (!customer) {
+        throw new Error('Customer not found');
+      }
+
+      // Find orders with pending payments (totalAmount > paidAmount)
+      const pendingOrders = await Order.find({
+        customer: customerId,
+        type: 'order',
+        status: { $nin:["cancelled","rejected"]},
+        deliveryStatus: { $nin:["cancelled"]},
+        $expr: { $gt: ['$totalAmount', '$paidAmount'] }
+      })
+      .select('_id orderNumber totalAmount paidAmount')
+      .sort({ orderDate: -1 })
+      .lean();
+
+      return {
+        success: true,
+        data: pendingOrders,
+        message: 'Customer pending orders retrieved successfully'
+      };
+    } catch (error) {
+      throw new Error(`Failed to fetch customer pending orders: ${error.message}`);
+    }
   }
 }
 

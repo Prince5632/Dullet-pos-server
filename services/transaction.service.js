@@ -187,7 +187,7 @@ class TransactionService {
    * - Updates paymentStatus/paidAmount and overrides paymentTerms with selected mode
    * - Creates a single transaction referencing affected order IDs
    */
-  async allocateCustomerPayment({ customerId, amountPaid, paymentMode, transactionDate }, userId) {
+  async allocateCustomerPayment({ customerId, amountPaid, orderIds=[], paymentMode, transactionDate }, userId) {
     try {
       // Basic validation
       if (!customerId) {
@@ -206,12 +206,20 @@ class TransactionService {
       let remainingAmount = amountPaid;
 
       await session.withTransaction(async () => {
-        // Find unpaid/partial/overdue orders for this customer, oldest first
-        const orders = await Order.find({
+        // Build query for orders
+        let orderQuery = {
           customer: customerId,
           type: 'order',
           paymentStatus: { $in: ['pending', 'partial', 'overdue'] },
-        })
+        };
+
+        // If specific orderIds are provided, filter by those IDs
+        if (orderIds && orderIds.length > 0) {
+          orderQuery._id = { $in: orderIds };
+        }
+
+        // Find orders (either specific ones or all unpaid), oldest first
+        const orders = await Order.find(orderQuery)
           .sort({ orderDate: 1 })
           .select('_id totalAmount paidAmount paymentStatus paymentTerms')
           .session(session);
