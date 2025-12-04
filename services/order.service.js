@@ -968,6 +968,7 @@ class OrderService {
     const oldValues = order.toObject();
 
     order.status = "approved";
+    order.deliveryStatus="delivered";
     order.approvedBy = approvedBy;
     order.approvedDate = new Date();
     order.updatedBy = approvedBy;
@@ -2246,7 +2247,7 @@ async getOrderStats(query = {}, currentUser) {
         throw new Error(`Quantity missing or invalid for item ${idx + 1}`);
       }
 
-      const ratePerUnit = Number(product.pricePerKg);
+      const ratePerUnit = Number(it.pricePerKg || product.pricePerKg);
       const totalAmount = quantityKg * ratePerUnit;
 
       return {
