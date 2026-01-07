@@ -13,7 +13,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.911.0",
+    "@aws-sdk/client-s3": "^3.964.0",
     "@aws-sdk/s3-request-presigner": "^3.911.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
