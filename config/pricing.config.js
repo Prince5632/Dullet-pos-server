@@ -52,8 +52,8 @@ const CITY_CONFIG = {
     { productKey: "family_atta_small", pricePerKg: 32.0 },
   ],
   delhi: [
-    { productKey: "family_atta", pricePerKg: 33.0 },
-    { productKey: "family_atta_small", pricePerKg: 33.0 },
+    { productKey: "family_atta", pricePerKg: 32.5 },
+    { productKey: "family_atta_small", pricePerKg: 32.5 },
     { productKey: "all_pure", pricePerKg: 35.0 },
     { productKey: "all_pure_small", pricePerKg: 35.0 },
   ],
