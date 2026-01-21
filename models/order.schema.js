@@ -33,7 +33,7 @@ const orderItemSchema = new mongoose.Schema({
   // Additional specifications
   packaging: {
     type: String,
-    enum: ['Standard', 'Custom', '5kg Bags', '10kg Bags', '25kg Bags', '50kg Bags','40kg Bag', '40kg Bags', 'Loose'],
+    enum: ['Standard', 'Custom', '5kg Bags', '10kg Bags', '25kg Bags', '50kg Bags', '40kg Bag', '40kg Bags', 'Loose'],
     default: 'Standard'
   },
   isBagSelection: {
@@ -46,7 +46,7 @@ const orderSchema = new mongoose.Schema({
   // Type field to distinguish between orders and visits
   type: {
     type: String,
-    enum: ['order', 'visit'],   
+    enum: ['order', 'visit'],
     default: 'order',
     required: true
   },
@@ -69,9 +69,9 @@ const orderSchema = new mongoose.Schema({
   // Order Items (required for orders, not for visits)
   items: {
     type: [orderItemSchema],
-    required: function() { return this.type === 'order'; },
+    required: function () { return this.type === 'order'; },
     validate: {
-      validator: function(items) {
+      validator: function (items) {
         // For orders, must have at least one item
         if (this.type === 'order') {
           return items && items.length > 0;
@@ -84,7 +84,7 @@ const orderSchema = new mongoose.Schema({
   // Order Totals (required for orders, not for visits)
   subtotal: {
     type: Number,
-    required: function() { return this.type === 'order'; },
+    required: function () { return this.type === 'order'; },
     min: 0
   },
   discount: {
@@ -115,7 +115,7 @@ const orderSchema = new mongoose.Schema({
   },
   totalAmount: {
     type: Number,
-    required: function() { return this.type === 'order'; },
+    required: function () { return this.type === 'order'; },
     min: 0
   },
   // Order Status
@@ -227,14 +227,14 @@ const orderSchema = new mongoose.Schema({
   paymentTerms: {
     type: String,
     enum: ['Cash', 'Credit', 'Advance', 'Cheque', 'Online'],
-    default: function() { return this.type === 'order' ? 'Cash' : undefined; },
-    required: function() { return this.type === 'order'; }
+    default: function () { return this.type === 'order' ? 'Cash' : undefined; },
+    required: function () { return this.type === 'order'; }
   },
   paymentStatus: {
     type: String,
     enum: ['pending', 'partial', 'paid', 'overdue'],
-    default: function() { return this.type === 'order' ? 'pending' : undefined; },
-    required: function() { return this.type === 'order'; }
+    default: function () { return this.type === 'order' ? 'pending' : undefined; },
+    required: function () { return this.type === 'order'; }
   },
   paidAmount: {
     type: Number,
@@ -284,7 +284,7 @@ const orderSchema = new mongoose.Schema({
   // visit-specific fields
   scheduleDate: {
     type: Date,
-    required: function() { return this.type === 'visit'; }
+    required: function () { return this.type === 'visit'; }
   },
   capturedImage: {
     type: String, // Base64 encoded image
@@ -304,6 +304,11 @@ const orderSchema = new mongoose.Schema({
       required: true
     },
     timestamp: { type: Date, default: Date.now }
+  },
+  perWeekCapacity: {
+    type: Number,
+    required: false,
+    min: 0
   }
 }, {
   timestamps: true
@@ -321,7 +326,7 @@ orderSchema.index({ type: 1 });
 orderSchema.index({ scheduleDate: 1 });
 
 // Custom validation for type-specific requirements
-orderSchema.pre('validate', function(next) {
+orderSchema.pre('validate', function (next) {
   if (this.type === 'visit') {
     // visit-specific validations
     if (!this.scheduleDate) {
@@ -331,7 +336,7 @@ orderSchema.pre('validate', function(next) {
       this.invalidate('capturedImage', 'Captured image is required for visits');
     }
     if (!this.captureLocation || !this.captureLocation.latitude || !this.captureLocation.longitude) {
-      this.invalidate('captureLocation', 'Capture location (latitude and longitude) is required for visits'); 
+      this.invalidate('captureLocation', 'Capture location (latitude and longitude) is required for visits');
     }
   } else if (this.type === 'order') {
     // Order-specific validations
@@ -357,67 +362,67 @@ const counterSchema = new mongoose.Schema({
 const Counter = mongoose.model('Counter', counterSchema);
 
 // Generate order number before validation
-orderSchema.pre('validate', async function(next) {
+orderSchema.pre('validate', async function (next) {
   if (this.isNew && !this.orderNumber) {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const day = String(today.getDate()).padStart(2, '0');
-    
+
     const prefix = this.type === 'visit' ? 'VST' : 'ORD';
     const datePrefix = `${prefix}${year}${month}${day}`;
     const counterId = `${datePrefix}_${this.type}`;
-    
+
     let attempts = 0;
     const maxAttempts = 3;
-    
+
     while (attempts < maxAttempts) {
       try {
         // Check if counter exists, if not, initialize it with existing data
         let counter = await Counter.findById(counterId);
-        
+
         if (!counter) {
           // Find the highest sequence number for today of this type
           const lastRecord = await this.constructor
-            .findOne({ 
+            .findOne({
               orderNumber: new RegExp(`^${datePrefix}`),
-              type: this.type 
+              type: this.type
             })
             .sort({ orderNumber: -1 });
-          
+
           let startSequence = 0;
           if (lastRecord) {
             const lastSequence = parseInt(lastRecord.orderNumber.slice(-3));
             startSequence = lastSequence;
           }
-          
+
           // Initialize counter with the current max sequence
           counter = await Counter.findOneAndUpdate(
             { _id: counterId },
             { $setOnInsert: { sequence: startSequence } },
-            { 
-              new: true, 
-              upsert: true 
+            {
+              new: true,
+              upsert: true
             }
           );
         }
-        
+
         // Use atomic findOneAndUpdate to get next sequence number
         counter = await Counter.findOneAndUpdate(
           { _id: counterId },
           { $inc: { sequence: 1 } },
           { new: true }
         );
-        
+
         const sequence = counter.sequence;
         this.orderNumber = `${datePrefix}${String(sequence).padStart(3, '0')}`;
-        
+
         // Verify the generated number doesn't already exist (extra safety check)
-        const existingOrder = await this.constructor.findOne({ 
+        const existingOrder = await this.constructor.findOne({
           orderNumber: this.orderNumber,
-          type: this.type 
+          type: this.type
         });
-        
+
         if (!existingOrder) {
           break; // Success, unique number generated
         } else {
@@ -441,7 +446,7 @@ orderSchema.pre('validate', async function(next) {
 });
 
 // Calculate totals before validation
-orderSchema.pre('validate', function(next) {
+orderSchema.pre('validate', function (next) {
   // Skip calculations for visits
   if (this.type === 'visit') {
     this.subtotal = 0;
@@ -463,7 +468,7 @@ orderSchema.pre('validate', function(next) {
 
   // Calculate subtotal from items
   this.subtotal = (this.items || []).reduce((sum, item) => sum + (item.totalAmount || 0), 0);
-  
+
   // Apply discount
   let discountAmount = 0;
   if (this.discountPercentage > 0) {
@@ -471,7 +476,7 @@ orderSchema.pre('validate', function(next) {
   } else {
     discountAmount = this.discount || 0;
   }
-  
+
   // Calculate tax amount based on isTaxable flag
   if (this.isTaxable) {
     const taxableAmount = this.subtotal - discountAmount;
@@ -479,20 +484,20 @@ orderSchema.pre('validate', function(next) {
   } else {
     this.taxAmount = 0;
   }
-  
+
   // Calculate total
   this.totalAmount = this.subtotal - discountAmount + (this.taxAmount || 0);
-  
+
   next();
 });
 
 // Virtual for remaining amount
-orderSchema.virtual('remainingAmount').get(function() {
+orderSchema.virtual('remainingAmount').get(function () {
   return this.totalAmount - this.paidAmount;
 });
 
 // Virtual for order age in days
-orderSchema.virtual('orderAge').get(function() {
+orderSchema.virtual('orderAge').get(function () {
   const today = new Date();
   const diffTime = today - this.orderDate;
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));

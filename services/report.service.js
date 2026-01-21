@@ -26,12 +26,12 @@ exports.getSalesExecutiveReports = async (
     const userMatch = {};
     if (userId) userMatch._id = new mongoose.Types.ObjectId(userId);
     if (department) userMatch.department = department;
-    
+
 
     // ✅ Godown Access Logic
     let godownAccessFilter = {};
     let allowedGodowns = [];
-    
+
     if (
       requestingUser &&
       (requestingUser.primaryGodown ||
@@ -100,26 +100,26 @@ exports.getSalesExecutiveReports = async (
           ...(roleIds.length > 0
             ? { role: { $in: roleIds } }
             : {
-                $or: [
-                  { "roleData.name": "Sales Executive" },
-                  { "roleData.name": "Manager" },
-                ],
-              }),
+              $or: [
+                { "roleData.name": "Sales Executive" },
+                { "roleData.name": "Manager" },
+              ],
+            }),
         },
       },
 
       // ✅ Godown-based access filtering for Users
       ...(Object.keys(godownAccessFilter).length > 0
         ? [
-            {
-              $match: {
-                $or: [
-                  { primaryGodown: { $in: godownAccessFilter.godown.$in } },
-                  { accessibleGodowns: { $in: godownAccessFilter.godown.$in } },
-                ],
-              },
+          {
+            $match: {
+              $or: [
+                { primaryGodown: { $in: godownAccessFilter.godown.$in } },
+                { accessibleGodowns: { $in: godownAccessFilter.godown.$in } },
+              ],
             },
-          ]
+          },
+        ]
         : []),
 
       // ✅ Optimized Order Aggregation — No arrays returned
@@ -133,15 +133,15 @@ exports.getSalesExecutiveReports = async (
                 $expr: { $eq: ["$createdBy", "$$userId"] },
                 type: type || "order",
                 status: { $nin: ["cancelled", "rejected"] },
-                deliveryStatus: { $nin: ["cancelled", ] },
+                deliveryStatus: { $nin: ["cancelled",] },
                 ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {}),
                 ...(dateRange && (dateRange.startDate || dateRange.endDate)
                   ? {
-                      orderDate: {
-                        ...(dateRange.startDate ? { $gte: dateRange.startDate } : {}),
-                        ...(dateRange.endDate ? { $lte: dateRange.endDate } : {}),
-                      },
-                    }
+                    orderDate: {
+                      ...(dateRange.startDate ? { $gte: dateRange.startDate } : {}),
+                      ...(dateRange.endDate ? { $lte: dateRange.endDate } : {}),
+                    },
+                  }
                   : {}),
               },
             },
@@ -245,16 +245,16 @@ exports.getSalesExecutiveReports = async (
       // ✅ Filter by user activity (after stats calculated)
       ...(userActivityFilter
         ? [
-            {
-              $match: {
-                ...(userActivityFilter === "active"
-                  ? { totalOrders: { $gt: 0 } }
-                  : userActivityFilter === "inactive"
+          {
+            $match: {
+              ...(userActivityFilter === "active"
+                ? { totalOrders: { $gt: 0 } }
+                : userActivityFilter === "inactive"
                   ? { totalOrders: { $eq: 0 } }
                   : {}),
-              },
             },
-          ]
+          },
+        ]
         : []),
 
       {
@@ -282,11 +282,11 @@ exports.getSalesExecutiveReports = async (
           ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {}),
           ...(dateRange && (dateRange.startDate || dateRange.endDate)
             ? {
-                orderDate: {
-                  ...(dateRange.startDate ? { $gte: dateRange.startDate } : {}),
-                  ...(dateRange.endDate ? { $lte: dateRange.endDate } : {}),
-                },
-              }
+              orderDate: {
+                ...(dateRange.startDate ? { $gte: dateRange.startDate } : {}),
+                ...(dateRange.endDate ? { $lte: dateRange.endDate } : {}),
+              },
+            }
             : {}),
         },
       },
@@ -303,11 +303,11 @@ exports.getSalesExecutiveReports = async (
             $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] },
           },
           deliveredOrders: {
-                  $sum: { $cond: [{ $eq: ["$deliveryStatus", "delivered"] }, 1, 0] },
-                },
-                completedOrders: {
-                  $sum: { $cond: [{ $eq: ["$deliveryStatus", "delivered"] }, 1, 0] },
-                },
+            $sum: { $cond: [{ $eq: ["$deliveryStatus", "delivered"] }, 1, 0] },
+          },
+          completedOrders: {
+            $sum: { $cond: [{ $eq: ["$deliveryStatus", "delivered"] }, 1, 0] },
+          },
           uniqueCustomers: { $addToSet: "$customer" },
           lastActivityDate: { $max: "$orderDate" },
         },
@@ -316,7 +316,7 @@ exports.getSalesExecutiveReports = async (
 
     const deletedUserStats = await Order.aggregate(deletedUserOrdersPipeline);
     console.log("📊 Deleted user stats found:", deletedUserStats);
-    
+
     const deletedUserReport = deletedUserStats.length > 0 ? {
       _id: "deleted-user",
       executiveName: "Deleted User",
@@ -330,7 +330,7 @@ exports.getSalesExecutiveReports = async (
       totalRevenue: Math.round(deletedUserStats[0].totalRevenue * 100) / 100,
       totalPaidAmount: Math.round(deletedUserStats[0].totalPaidAmount * 100) / 100,
       totalOutstanding: Math.round((deletedUserStats[0].totalRevenue - deletedUserStats[0].totalPaidAmount) * 100) / 100,
-      avgOrderValue: deletedUserStats[0].totalOrders > 0 ? 
+      avgOrderValue: deletedUserStats[0].totalOrders > 0 ?
         Math.round((deletedUserStats[0].totalRevenue / deletedUserStats[0].totalOrders) * 100) / 100 : 0,
       pendingOrders: deletedUserStats[0].pendingOrders,
       approvedOrders: deletedUserStats[0].approvedOrders,
@@ -339,7 +339,7 @@ exports.getSalesExecutiveReports = async (
       uniqueCustomersCount: deletedUserStats[0].uniqueCustomers.length,
       conversionRate: 0,
       lastActivityDate: deletedUserStats[0].lastActivityDate,
-      daysSinceLastActivity: deletedUserStats[0].lastActivityDate ? 
+      daysSinceLastActivity: deletedUserStats[0].lastActivityDate ?
         Math.round((new Date() - deletedUserStats[0].lastActivityDate) / (1000 * 60 * 60 * 24)) : null,
       daysSinceUserCreation: 0,
     } : null;
@@ -348,11 +348,11 @@ exports.getSalesExecutiveReports = async (
 
     // Add deleted user report to the results if it exists
     if (deletedUserReport) {
-      if(!userId){
-      reports.push(deletedUserReport);
+      if (!userId) {
+        reports.push(deletedUserReport);
 
       }
-    } 
+    }
 
     // ✅ Also check for orders where createdBy references a non-existent user
     console.log("🔍 Checking for orders with non-existent createdBy references...");
@@ -366,11 +366,11 @@ exports.getSalesExecutiveReports = async (
           ...(Object.keys(godownAccessFilter).length > 0 ? godownAccessFilter : {}),
           ...(dateRange && (dateRange.startDate || dateRange.endDate)
             ? {
-                orderDate: {
-                  ...(dateRange.startDate ? { $gte: dateRange.startDate } : {}),
-                  ...(dateRange.endDate ? { $lte: dateRange.endDate } : {}),
-                },
-              }
+              orderDate: {
+                ...(dateRange.startDate ? { $gte: dateRange.startDate } : {}),
+                ...(dateRange.endDate ? { $lte: dateRange.endDate } : {}),
+              },
+            }
             : {}),
         },
       },
@@ -427,7 +427,7 @@ exports.getSalesExecutiveReports = async (
       totalRevenue: Math.round(orphanedOrdersStats[0].totalRevenue * 100) / 100,
       totalPaidAmount: Math.round(orphanedOrdersStats[0].totalPaidAmount * 100) / 100,
       totalOutstanding: Math.round((orphanedOrdersStats[0].totalRevenue - orphanedOrdersStats[0].totalPaidAmount) * 100) / 100,
-      avgOrderValue: orphanedOrdersStats[0].totalOrders > 0 ? 
+      avgOrderValue: orphanedOrdersStats[0].totalOrders > 0 ?
         Math.round((orphanedOrdersStats[0].totalRevenue / orphanedOrdersStats[0].totalOrders) * 100) / 100 : 0,
       pendingOrders: orphanedOrdersStats[0].pendingOrders,
       approvedOrders: orphanedOrdersStats[0].approvedOrders,
@@ -436,7 +436,7 @@ exports.getSalesExecutiveReports = async (
       uniqueCustomersCount: orphanedOrdersStats[0].uniqueCustomers.length,
       conversionRate: 0,
       lastActivityDate: orphanedOrdersStats[0].lastActivityDate,
-      daysSinceLastActivity: orphanedOrdersStats[0].lastActivityDate ? 
+      daysSinceLastActivity: orphanedOrdersStats[0].lastActivityDate ?
         Math.round((new Date() - orphanedOrdersStats[0].lastActivityDate) / (1000 * 60 * 60 * 24)) : null,
       daysSinceUserCreation: 0,
     } : null;
@@ -445,11 +445,11 @@ exports.getSalesExecutiveReports = async (
 
     // Add orphaned orders report to the results if it exists
     if (orphanedOrdersReport) {
-      if(!userId){
-      reports.push(orphanedOrdersReport);
+      if (!userId) {
+        reports.push(orphanedOrdersReport);
 
       }
-    } 
+    }
 
     // ✅ Summary calculation (much faster now)
     const summary = {
@@ -463,7 +463,7 @@ exports.getSalesExecutiveReports = async (
       avgOrderValueAll:
         reports.length > 0
           ? reports.reduce((sum, r) => sum + r.avgOrderValue, 0) /
-            reports.length
+          reports.length
           : 0,
     };
 
@@ -605,7 +605,7 @@ exports.getCustomerReports = async (
     // Validate pagination parameters
     const validPage = Math.max(1, parseInt(page) || 1);
     const validLimit = Math.max(1, Math.min(100, parseInt(limit) || 10));
-    
+
     const { dateRange, customerId, inactiveDays, godownId, status, deliveryStatus } = filters;
 
     // Build match criteria
@@ -619,7 +619,7 @@ exports.getCustomerReports = async (
     } else {
       matchCriteria.status = { $nin: ["cancelled", "rejected"] };
     }
-    
+
     // Apply delivery status filter if provided
     if (deliveryStatus) {
       matchCriteria.deliveryStatus = deliveryStatus;
@@ -644,121 +644,121 @@ exports.getCustomerReports = async (
 
     // Apply godown filtering
     if (godownId) {
-      const customerIds = await Customer.find({assignedGodownId: new mongoose.Types.ObjectId(godownId)})
-      matchCriteria.customer = {$in:customerIds?.map(c=>c?._id)}
-    } 
+      const customerIds = await Customer.find({ assignedGodownId: new mongoose.Types.ObjectId(godownId) })
+      matchCriteria.customer = { $in: customerIds?.map(c => c?._id) }
+    }
     // Aggregate orders by customer
     const allReports = await Order.aggregate([
       { $match: matchCriteria },
-   {
+      {
 
-  $group: {
-    _id: "$customer",
+        $group: {
+          _id: "$customer",
 
-    totalOrders: { $sum: 1 },
+          totalOrders: { $sum: 1 },
 
-    totalSpent: {
-      $sum: {
-        $cond: [
-          {
-            $or: [
-              { $in: ["$status", ["cancelled", "rejected"]] },
-              { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
-            ]
-          },
-          0,
-          "$totalAmount"
-        ]
-      }
-    },
-
-    totalPaid: {
-      $sum: {
-        $cond: [
-          {
-            $or: [
-              { $in: ["$status", ["cancelled", "rejected"]] },
-              { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
-            ]
-          },
-          0,
-          "$paidAmount"
-        ]
-      }
-    },
-
-    /** NEW — VALID ORDERS SUM **/
-    validOrderAmountSum: {
-      $sum: {
-        $cond: [
-          {
-            $or: [
-              { $in: ["$status", ["cancelled", "rejected"]] },
-              { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
-            ]
-          },
-          0,
-          "$totalAmount"
-        ]
-      }
-    },
-
-    /** NEW — VALID ORDERS COUNT **/
-    validOrderCount: {
-      $sum: {
-        $cond: [
-          {
-            $or: [
-              { $in: ["$status", ["cancelled", "rejected"]] },
-              { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
-            ]
-          },
-          0,
-          1
-        ]
-      }
-    },
-
-    /** NEW — TOTAL ATTA SOLD (IN KG) **/
-    totalAttaKg: {
-      $sum: {
-        $cond: [
-          {
-            $or: [
-              { $in: ["$status", ["cancelled", "rejected"]] },
-              { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
-            ]
-          },
-          0,
-          {
+          totalSpent: {
             $sum: {
-              $map: {
-                input: "$items",
-                as: "item",
-                in: "$$item.quantity"
-              }
+              $cond: [
+                {
+                  $or: [
+                    { $in: ["$status", ["cancelled", "rejected"]] },
+                    { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+                  ]
+                },
+                0,
+                "$totalAmount"
+              ]
             }
-          }
-        ]
-      }
-    },
+          },
 
-    lastOrderDate: { $max: "$orderDate" },
-    firstOrderDate: { $min: "$orderDate" },
+          totalPaid: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $in: ["$status", ["cancelled", "rejected"]] },
+                    { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+                  ]
+                },
+                0,
+                "$paidAmount"
+              ]
+            }
+          },
 
-    pendingOrders: {
-      $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
-    },
+          /** NEW — VALID ORDERS SUM **/
+          validOrderAmountSum: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $in: ["$status", ["cancelled", "rejected"]] },
+                    { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+                  ]
+                },
+                0,
+                "$totalAmount"
+              ]
+            }
+          },
 
-    completedOrders: {
-      $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] },
-    },
+          /** NEW — VALID ORDERS COUNT **/
+          validOrderCount: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $in: ["$status", ["cancelled", "rejected"]] },
+                    { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+                  ]
+                },
+                0,
+                1
+              ]
+            }
+          },
 
-    orderStatuses: { $push: "$status" }
-  }
+          /** NEW — TOTAL ATTA SOLD (IN KG) **/
+          totalAttaKg: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $in: ["$status", ["cancelled", "rejected"]] },
+                    { $in: ["$deliveryStatus", ["cancelled", "returned"]] }
+                  ]
+                },
+                0,
+                {
+                  $sum: {
+                    $map: {
+                      input: "$items",
+                      as: "item",
+                      in: "$$item.quantity"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+
+          lastOrderDate: { $max: "$orderDate" },
+          firstOrderDate: { $min: "$orderDate" },
+
+          pendingOrders: {
+            $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+          },
+
+          completedOrders: {
+            $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] },
+          },
+
+          orderStatuses: { $push: "$status" }
+        }
 
 
-},
+      },
 
       {
         $lookup: {
@@ -791,17 +791,17 @@ exports.getCustomerReports = async (
           totalOutstanding: {
             $round: [{ $subtract: ["$totalSpent", "$totalPaid"] }, 2],
           },
-          avgOrderValue: { 
+          avgOrderValue: {
             $round: [
-              { 
+              {
                 $cond: [
                   { $eq: ["$validOrderCount", 0] },
                   0,
                   { $divide: ["$totalSpent", "$validOrderCount"] }
                 ]
-              }, 
+              },
               2
-            ] 
+            ]
           },
           lastOrderDate: 1,
           firstOrderDate: 1,
@@ -828,13 +828,13 @@ exports.getCustomerReports = async (
       },
     ]);
 
-  
-    const customersWithAvgOrderValue = allReports?.filter((o)=>o?.avgOrderValue > 0)
+
+    const customersWithAvgOrderValue = allReports?.filter((o) => o?.avgOrderValue > 0)
     const summary = {
       totalCustomers: allReports.length,
       activeCustomers: allReports.filter((r) => r.daysSinceLastOrder <= 30).length,
-      inactiveCustomers: inactiveDays 
-        ? allReports.filter((r) => r.daysSinceLastOrder >= inactiveDays).length 
+      inactiveCustomers: inactiveDays
+        ? allReports.filter((r) => r.daysSinceLastOrder >= inactiveDays).length
         : 0,
       totalRevenueAll: allReports.reduce((sum, r) => sum + r.totalSpent, 0),
       totalOutstandingAll: allReports.reduce(
@@ -844,10 +844,10 @@ exports.getCustomerReports = async (
       avgCustomerValue:
         customersWithAvgOrderValue.length > 0
           ? customersWithAvgOrderValue.reduce((sum, r) => sum + (r.avgOrderValue || 0), 0) /
-            customersWithAvgOrderValue.length
+          customersWithAvgOrderValue.length
           : 0,
-      totalKg : 
-       customersWithAvgOrderValue.length > 0
+      totalKg:
+        customersWithAvgOrderValue.length > 0
           ? customersWithAvgOrderValue.reduce((sum, r) => sum + (r.totalAttaKg || 0), 0)
           : 0,
     };
@@ -893,7 +893,7 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
     // Validate pagination parameters
     const validPage = Math.max(1, parseInt(page) || 1);
     const validLimit = Math.max(1, Math.min(100, parseInt(limit) || 10));
-    
+
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
@@ -901,14 +901,14 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
     const orderMatchCriteria = {
       type: "order",
     };
-    
+
     // Apply status filter if provided, otherwise exclude cancelled and rejected
     if (status) {
       orderMatchCriteria.status = status;
     } else {
       orderMatchCriteria.status = { $nin: ["cancelled", "rejected"] };
     }
-    
+
     // Apply delivery status filter if provided
     if (deliveryStatus) {
       orderMatchCriteria.deliveryStatus = deliveryStatus;
@@ -916,12 +916,12 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
       // Only apply default delivery status filter if no status filter is provided
       // orderMatchCriteria.deliveryStatus = { $nin: ["cancelled", ] }; 
     }
-    
+
     // Apply godown filtering - same pattern as getCustomerReports
     if (godownId) {
-      const customerIds = await Customer.find({assignedGodownId: new mongoose.Types.ObjectId(godownId)})
-      orderMatchCriteria.customer = {$in:customerIds?.map(c=>c?._id)}
-    } 
+      const customerIds = await Customer.find({ assignedGodownId: new mongoose.Types.ObjectId(godownId) })
+      orderMatchCriteria.customer = { $in: customerIds?.map(c => c?._id) }
+    }
 
     // Get last order info and outstanding calculation for all customers using aggregation
     const customerLastOrders = await Order.aggregate([
@@ -981,22 +981,22 @@ exports.getInactiveCustomers = async (days = 7, godownId = null, page = 1, limit
 
     // Build customer filter - get customers from the order aggregation results
     const customerIdsFromOrders = Array.from(lastOrderMap.keys()).map(id => new mongoose.Types.ObjectId(id));
-    
+
     // Get all active customers that have orders (already filtered by godown if specified)
-    const customers = await Customer.find({ 
+    const customers = await Customer.find({
       _id: { $in: customerIdsFromOrders },
-      isActive: true 
+      isActive: true
     })
-    .select('customerId businessName contactPersonName phone email customerType address')
-    .lean();
+      .select('customerId businessName contactPersonName phone email customerType address')
+      .lean();
 
     // Filter inactive customers and build response
     const inactiveCustomers = [];
-    
+
     for (const customer of customers) {
       const lastOrderInfo = lastOrderMap.get(customer._id.toString());
       const lastOrderDate = lastOrderInfo?.lastOrderDate || null;
-      
+
       // Check if customer is inactive (no orders or last order before cutoff)
       if (!lastOrderDate || lastOrderDate < cutoffDate) {
         const daysSinceLastOrder = lastOrderDate
@@ -1093,7 +1093,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
     const countingMatchCriteria = {
       createdBy: new mongoose.Types.ObjectId(userId),
       type: type || "order",
-      status: { $nin: [ "rejected"] },
+      status: { $nin: ["rejected"] },
     };
 
     if (dateRange && (dateRange.startDate || dateRange.endDate)) {
@@ -1111,7 +1111,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
 
     // Get orders for listing (include cancelled orders, only return required fields)
     const orders = await Order.find(listingMatchCriteria)
-      .select("_id type status notes deliveryStatus orderNumber orderDate createdAt totalAmount capturedImage customer")
+      .select("_id type status notes deliveryStatus orderNumber orderDate createdAt totalAmount capturedImage customer perWeekCapacity")
       .populate("customer", "_id businessName")
       .sort({ orderDate: -1 })
       .limit(100);
@@ -1119,14 +1119,14 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
     // Enrich recent orders with attaKg (normalized KG for all items)
     const recentOrders = await Promise.all(orders.map(async (doc) => {
       const order = doc.toObject();
-      
+
       // Fetch full order with items for attaKg calculation
       const fullOrder = await Order.findById(order._id).select('items');
       let totalKg = 0;
-      
+
       if (fullOrder && fullOrder.items) {
         const items = Array.isArray(fullOrder.items) ? fullOrder.items : [];
-        
+
         for (const item of items) {
           const unit = (item?.unit || "").toString().trim();
           const quantity = Number(item?.quantity || 0);
@@ -1262,23 +1262,23 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
 
       metrics = visitMetrics[0]
         ? {
-            ...visitMetrics[0],
-            uniqueLocations: visitMetrics[0].uniqueLocationsCount,
-            totalVisitsToday: todayVisitsCount,
-            avgLocationsPerDay: visitMetrics[0].avgLocationsPerDay || 0,
-          }
+          ...visitMetrics[0],
+          uniqueLocations: visitMetrics[0].uniqueLocationsCount,
+          totalVisitsToday: todayVisitsCount,
+          avgLocationsPerDay: visitMetrics[0].avgLocationsPerDay || 0,
+        }
         : {
-            totalOrders: 0,
-            totalRevenue: 0,
-            totalPaid: 0,
-            avgOrderValue: 0,
-            maxOrderValue: 0,
-            minOrderValue: 0,
-            uniqueLocations: 0,
-            completedVisits: 0,
-            totalVisitsToday: todayVisitsCount,
-            avgLocationsPerDay: 0,
-          };
+          totalOrders: 0,
+          totalRevenue: 0,
+          totalPaid: 0,
+          avgOrderValue: 0,
+          maxOrderValue: 0,
+          minOrderValue: 0,
+          uniqueLocations: 0,
+          completedVisits: 0,
+          totalVisitsToday: todayVisitsCount,
+          avgLocationsPerDay: 0,
+        };
     } else {
       // Order-specific metrics (existing logic)
       const orderMetrics = await Order.aggregate([
@@ -1345,7 +1345,7 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
 
     // Combine the data
     const monthlyTrend = monthlyTrendOrders.map(orderData => {
-      const revenueData = monthlyTrendRevenue.find(r => 
+      const revenueData = monthlyTrendRevenue.find(r =>
         r._id.year === orderData._id.year && r._id.month === orderData._id.month
       );
       return {
@@ -1506,10 +1506,10 @@ exports.getExecutivePerformanceDetail = async (userId, filters = {}) => {
         avgPricePerKg:
           attaTotalsAgg[0] && attaTotalsAgg[0].totalKg > 0
             ? Number(
-                (
-                  (attaTotalsAgg[0].totalAmount || 0) / attaTotalsAgg[0].totalKg
-                ).toFixed(2)
-              )
+              (
+                (attaTotalsAgg[0].totalAmount || 0) / attaTotalsAgg[0].totalKg
+              ).toFixed(2)
+            )
             : 0,
       },
     };
@@ -1611,8 +1611,8 @@ exports.getCustomerPurchaseDetail = async (customerId, filters = {}) => {
     const lastOrder = orders[0];
     const daysSinceLastOrder = lastOrder
       ? Math.floor(
-          (new Date() - new Date(lastOrder.orderDate)) / (1000 * 60 * 60 * 24)
-        )
+        (new Date() - new Date(lastOrder.orderDate)) / (1000 * 60 * 60 * 24)
+      )
       : null;
 
     return {
@@ -1654,7 +1654,7 @@ exports.getCustomerPurchaseDetail = async (customerId, filters = {}) => {
  */
 const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
   const Order = require("../models/order.schema");
-  const { dateRange, userId, department,status,deliveryStatus, godownId, roleIds = [], type } = filters;
+  const { dateRange, userId, department, status, deliveryStatus, godownId, roleIds = [], type } = filters;
 
   // Build match conditions
   const matchConditions = {};
@@ -1662,11 +1662,11 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
   if (type) {
     matchConditions.type = type;
   }
- if(!status){
-    matchConditions.status = { $nin: ["cancelled","rejected"]}
+  if (!status) {
+    matchConditions.status = { $nin: ["cancelled", "rejected"] }
   }
-  if(!deliveryStatus){
-    matchConditions.deliveryStatus = { $nin: ["cancelled"]}
+  if (!deliveryStatus) {
+    matchConditions.deliveryStatus = { $nin: ["cancelled"] }
   }
   if (dateRange) {
     matchConditions.orderDate = {};
@@ -1696,7 +1696,7 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
   // Only preserve null arrays when NOT filtering by specific userId
   // This prevents orphaned orders when userId filter is applied
   const preserveNullArrays = !userId;
-  
+
   const pipeline = [
     { $match: matchConditions },
     {
@@ -1807,22 +1807,22 @@ const getDateWiseOrderBreakdown = async (filters, requestingUser) => {
  */
 const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
   const Order = require("../models/order.schema");
-  const { dateRange, userId, department,status,deliveryStatus, godownId, roleIds = [], type } = filters;
+  const { dateRange, userId, department, status, deliveryStatus, godownId, roleIds = [], type } = filters;
 
   // Build match conditions
   const matchConditions = {};
-  
+
   if (type) {
     matchConditions.type = type;
   }
 
-  if(!status){
-    matchConditions.status = { $nin: ["cancelled","rejected"]}
+  if (!status) {
+    matchConditions.status = { $nin: ["cancelled", "rejected"] }
   }
-  if(!deliveryStatus){
-    matchConditions.deliveryStatus = { $nin: ["cancelled"]}
+  if (!deliveryStatus) {
+    matchConditions.deliveryStatus = { $nin: ["cancelled"] }
   }
-  
+
   if (dateRange) {
     matchConditions.orderDate = {};
     if (dateRange.startDate) matchConditions.orderDate.$gte = dateRange.startDate;
@@ -1851,7 +1851,7 @@ const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
   // Only preserve null arrays when NOT filtering by specific userId
   // This prevents orphaned orders when userId filter is applied
   const preserveNullArrays = !userId;
-  
+
   const pipeline = [
     { $match: matchConditions },
     {
@@ -1863,7 +1863,7 @@ const getMonthWiseOrderBreakdown = async (filters, requestingUser) => {
       },
     },
     { $unwind: { path: "$creator", preserveNullAndEmptyArrays: preserveNullArrays } },
-     // Combine firstName and lastName into fullName
+    // Combine firstName and lastName into fullName
     {
       $addFields: {
         "creator.fullName": {
@@ -2121,7 +2121,7 @@ exports.generateSalesExecutiveExcel = async (
 
     // ========== SHEET 2: Date-wise Breakdown ==========
     const dateWiseSheet = workbook.addWorksheet("Date-wise Breakdown");
-    
+
     // Define columns based on report type
     const dateWiseColumns = [
       { header: "Date", key: "date", width: 15 },
@@ -2192,7 +2192,7 @@ exports.generateSalesExecutiveExcel = async (
 
     // ========== SHEET 3: Month-wise Breakdown ==========
     const monthWiseSheet = workbook.addWorksheet("Month-wise Breakdown");
-    
+
     // Define columns based on report type
     const monthWiseColumns = [
       { header: "Month", key: "month", width: 15 },
@@ -2259,6 +2259,86 @@ exports.generateSalesExecutiveExcel = async (
         from: { row: 1, column: 1 },
         to: { row: 1, column: monthWiseSheet.columnCount },
       };
+    }
+
+    // ========== SHEET 4: Detailed Visits (only for visit type) ==========
+    if (type === "visit") {
+      const detailedVisitsSheet = workbook.addWorksheet("Detailed Visits");
+
+      // Get detailed visit data with perWeekCapacity
+      const detailedVisits = await Order.find({
+        type: "visit",
+        status: { $nin: ["cancelled", "rejected"] },
+        ...(filters.dateRange && (filters.dateRange.startDate || filters.dateRange.endDate)
+          ? {
+            orderDate: {
+              ...(filters.dateRange.startDate ? { $gte: filters.dateRange.startDate } : {}),
+              ...(filters.dateRange.endDate ? { $lte: filters.dateRange.endDate } : {}),
+            },
+          }
+          : {}),
+      })
+        .select("orderNumber orderDate notes perWeekCapacity customer createdBy captureLocation")
+        .populate("customer", "businessName")
+        .populate("createdBy", "firstName lastName employeeId")
+        .sort({ orderDate: -1 })
+        .lean();
+
+      detailedVisitsSheet.columns = [
+        { header: "Visit No", key: "orderNumber", width: 20 },
+        { header: "Date", key: "orderDate", width: 15 },
+        { header: "Sales Executive", key: "executiveName", width: 25 },
+        { header: "Employee ID", key: "employeeId", width: 15 },
+        { header: "Customer", key: "customerName", width: 30 },
+        { header: "Notes", key: "notes", width: 40 },
+        { header: "Capacity (Ton/Week)", key: "perWeekCapacity", width: 20 },
+        { header: "Location", key: "location", width: 40 },
+      ];
+
+      // Style header
+      detailedVisitsSheet.getRow(1).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
+      detailedVisitsSheet.getRow(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF5B9BD5" },
+      };
+      detailedVisitsSheet.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+
+      // Add visit data
+      detailedVisits.forEach((visit) => {
+        detailedVisitsSheet.addRow({
+          orderNumber: visit.orderNumber || "",
+          orderDate: visit.orderDate ? new Date(visit.orderDate).toLocaleDateString("en-IN") : "",
+          executiveName: visit.createdBy
+            ? `${visit.createdBy.firstName || ""} ${visit.createdBy.lastName || ""}`.trim()
+            : "Unknown",
+          employeeId: visit.createdBy?.employeeId || "",
+          customerName: visit.customer?.businessName || "",
+          notes: visit.notes || "",
+          perWeekCapacity: visit.perWeekCapacity || "",
+          location: visit.captureLocation?.address || "",
+        });
+      });
+
+      // Add borders
+      detailedVisitsSheet.eachRow((row) => {
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        });
+      });
+
+      // Add auto-filter
+      if (detailedVisits.length > 0) {
+        detailedVisitsSheet.autoFilter = {
+          from: { row: 1, column: 1 },
+          to: { row: 1, column: detailedVisitsSheet.columnCount },
+        };
+      }
     }
 
     // Generate buffer

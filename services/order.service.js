@@ -25,8 +25,8 @@ class OrderService {
     const filter = {
       customer: customerId,
       type: "order",
-      status:{$nin:["cancelled","rejected"]},
-      deliveryStatus:{$nin:["cancelled"]}
+      status: { $nin: ["cancelled", "rejected"] },
+      deliveryStatus: { $nin: ["cancelled"] }
     };
 
     if (excludeOrderId) {
@@ -54,257 +54,145 @@ class OrderService {
     return safeNumber(previousBalance);
   }
 
-// Optimized getAllOrders - Sort BEFORE lookups
-async getAllOrders(query = {}, currentUser) {
-  const {
-    page = 1,
-    limit = 10,
-    search = "",
-    status = "",
-    deliveryStatus = "",
-    paymentStatus = "",
-    customerId = "",
-    dateFrom = "",
-    dateTo = "",
-    sortBy = "orderDate",
-    sortOrder = "desc",
-    type = "order",
-    priority = "",
-    minAmount = "",
-    maxAmount = "",
-    scheduleStatus = "",
-    visitStatus = "",
-    hasImage = "",
-    address = "",
-    orderStatus = "",
-    roleId = "",
-  } = query;
+  // Optimized getAllOrders - Sort BEFORE lookups
+  async getAllOrders(query = {}, currentUser) {
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      status = "",
+      deliveryStatus = "",
+      paymentStatus = "",
+      customerId = "",
+      dateFrom = "",
+      dateTo = "",
+      sortBy = "orderDate",
+      sortOrder = "desc",
+      type = "order",
+      priority = "",
+      minAmount = "",
+      maxAmount = "",
+      scheduleStatus = "",
+      visitStatus = "",
+      hasImage = "",
+      address = "",
+      orderStatus = "",
+      roleId = "",
+    } = query;
 
-  // Build filter object
-  const filter = {};
-  
-  if (search) {
-    filter.$or = [{ orderNumber: { $regex: search, $options: "i" } }];
-  }
-  if (status) filter.status = status;
-  if (deliveryStatus) filter.deliveryStatus = deliveryStatus;
-  if (paymentStatus) filter.paymentStatus = paymentStatus;
-  if (customerId) filter.customer = new mongoose.Types.ObjectId(customerId);
-  if (type) filter.type = type;
+    // Build filter object
+    const filter = {};
 
-  // Order-specific filters
-  if (type === "order") {
-    if (priority) filter.priority = priority;
-    if (minAmount || maxAmount) {
-      filter.totalAmount = {};
-      if (minAmount) filter.totalAmount.$gte = parseFloat(minAmount);
-      if (maxAmount) filter.totalAmount.$lte = parseFloat(maxAmount);
+    if (search) {
+      filter.$or = [{ orderNumber: { $regex: search, $options: "i" } }];
     }
-  }
+    if (status) filter.status = status;
+    if (deliveryStatus) filter.deliveryStatus = deliveryStatus;
+    if (paymentStatus) filter.paymentStatus = paymentStatus;
+    if (customerId) filter.customer = new mongoose.Types.ObjectId(customerId);
+    if (type) filter.type = type;
 
-  // Visit-specific filters
-  if (type === "visit") {
-    if (scheduleStatus) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      switch (scheduleStatus) {
-        case "today":
-          filter.scheduleDate = { $gte: today, $lt: tomorrow };
-          break;
-        case "upcoming":
-          filter.scheduleDate = { $gte: tomorrow };
-          break;
-        case "overdue":
-          filter.scheduleDate = { $lt: today };
-          filter.status = { $ne: "completed" };
-          break;
+    // Order-specific filters
+    if (type === "order") {
+      if (priority) filter.priority = priority;
+      if (minAmount || maxAmount) {
+        filter.totalAmount = {};
+        if (minAmount) filter.totalAmount.$gte = parseFloat(minAmount);
+        if (maxAmount) filter.totalAmount.$lte = parseFloat(maxAmount);
       }
     }
-    if (visitStatus) filter.visitStatus = visitStatus;
-    if (hasImage !== "") {
-      if (hasImage === "true") {
-        filter.captureLocation = { $exists: true, $ne: null };
-      } else if (hasImage === "false") {
-        filter.$or = [
-          { captureLocation: { $exists: false } },
-          { captureLocation: null },
-        ];
+
+    // Visit-specific filters
+    if (type === "visit") {
+      if (scheduleStatus) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        switch (scheduleStatus) {
+          case "today":
+            filter.scheduleDate = { $gte: today, $lt: tomorrow };
+            break;
+          case "upcoming":
+            filter.scheduleDate = { $gte: tomorrow };
+            break;
+          case "overdue":
+            filter.scheduleDate = { $lt: today };
+            filter.status = { $ne: "completed" };
+            break;
+        }
+      }
+      if (visitStatus) filter.visitStatus = visitStatus;
+      if (hasImage !== "") {
+        if (hasImage === "true") {
+          filter.captureLocation = { $exists: true, $ne: null };
+        } else if (hasImage === "false") {
+          filter.$or = [
+            { captureLocation: { $exists: false } },
+            { captureLocation: null },
+          ];
+        }
+      }
+      if (address) {
+        filter["captureLocation.address"] = { $regex: address, $options: "i" };
       }
     }
-    if (address) {
-      filter["captureLocation.address"] = { $regex: address, $options: "i" };
+
+    // Date range filter
+    if (dateFrom || dateTo) {
+      filter.orderDate = {};
+      if (dateFrom) filter.orderDate.$gte = new Date(dateFrom);
+      if (dateTo) {
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        filter.orderDate.$lte = endDate;
+      }
     }
-  }
 
-  // Date range filter
-  if (dateFrom || dateTo) {
-    filter.orderDate = {};
-    if (dateFrom) filter.orderDate.$gte = new Date(dateFrom);
-    if (dateTo) {
-      const endDate = new Date(dateTo);
-      endDate.setHours(23, 59, 59, 999);
-      filter.orderDate.$lte = endDate;
-    }
-  }
+    // Godown and role-based filtering
+    if (query.godownId) {
+      filter.godown = new mongoose.Types.ObjectId(query.godownId);
+    } else if (currentUser?.role && currentUser.role.name !== "Super Admin") {
+      const roleName = currentUser.role.name;
 
-  // Godown and role-based filtering
-  if (query.godownId) {
-    filter.godown = new mongoose.Types.ObjectId(query.godownId);
-  } else if (currentUser?.role && currentUser.role.name !== "Super Admin") {
-    const roleName = currentUser.role.name;
-    
-    if (roleName === "Driver") {
-      filter["driverAssignment.driver"] = currentUser._id;
-    } else if (["Sales Executive", "Staff"].includes(roleName)) {
-      filter.createdBy = currentUser._id;
-    } else {
-      const toIds = (arr) =>
-        (arr || []).map((v) => (typeof v === "object" && v?._id ? v._id : v));
-      const accessibleList = currentUser.accessibleGodowns?.length
-        ? toIds(currentUser.accessibleGodowns)
-        : currentUser.primaryGodown
-        ? [typeof currentUser.primaryGodown === "object"
-            ? currentUser.primaryGodown._id
-            : currentUser.primaryGodown]
-        : [];
-
-      if (accessibleList.length > 0) {
-        filter.godown = { $in: accessibleList };
-      } else {
+      if (roleName === "Driver") {
+        filter["driverAssignment.driver"] = currentUser._id;
+      } else if (["Sales Executive", "Staff"].includes(roleName)) {
         filter.createdBy = currentUser._id;
+      } else {
+        const toIds = (arr) =>
+          (arr || []).map((v) => (typeof v === "object" && v?._id ? v._id : v));
+        const accessibleList = currentUser.accessibleGodowns?.length
+          ? toIds(currentUser.accessibleGodowns)
+          : currentUser.primaryGodown
+            ? [typeof currentUser.primaryGodown === "object"
+              ? currentUser.primaryGodown._id
+              : currentUser.primaryGodown]
+            : [];
+
+        if (accessibleList.length > 0) {
+          filter.godown = { $in: accessibleList };
+        } else {
+          filter.createdBy = currentUser._id;
+        }
       }
     }
-  }
 
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
 
-  // OPTIMIZED PIPELINE: Sort and paginate BEFORE lookups
-  const basePipeline = [
-    { $match: filter },
-    { $sort: sort }, // Sort early on indexed fields
-    { $skip: skip },
-    { $limit: parseInt(limit) },
-  ];
+    // OPTIMIZED PIPELINE: Sort and paginate BEFORE lookups
+    const basePipeline = [
+      { $match: filter },
+      { $sort: sort }, // Sort early on indexed fields
+      { $skip: skip },
+      { $limit: parseInt(limit) },
+    ];
 
-  // Lookup pipeline (only for paginated results)
-  const lookupPipeline = [
-    // Lookup createdBy user with role
-    {
-      $lookup: {
-        from: "users",
-        localField: "createdBy",
-        foreignField: "_id",
-        as: "createdByUser",
-        pipeline: [
-          {
-            $lookup: {
-              from: "roles",
-              localField: "role",
-              foreignField: "_id",
-              as: "role",
-            },
-          },
-          { $unwind: { path: "$role", preserveNullAndEmptyArrays: true } },
-          { $project: { firstName: 1, lastName: 1, role: 1 } },
-        ],
-      },
-    },
-    { $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true } },
-    
-    // Lookup customer
-    {
-      $lookup: {
-        from: "customers",
-        localField: "customer",
-        foreignField: "_id",
-        as: "customer",
-        pipeline: [
-          {
-            $project: {
-              customerId: 1,
-              businessName: 1,
-              contactPersonName: 1,
-              phone: 1,
-            },
-          },
-        ],
-      },
-    },
-    { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
-    
-    // Lookup godown
-    {
-      $lookup: {
-        from: "godowns",
-        localField: "godown",
-        foreignField: "_id",
-        as: "godown",
-        pipeline: [{ $project: { name: 1, location: 1 } }],
-      },
-    },
-    { $unwind: { path: "$godown", preserveNullAndEmptyArrays: true } },
-    
-    // Lookup approvedBy
-    {
-      $lookup: {
-        from: "users",
-        localField: "approvedBy",
-        foreignField: "_id",
-        as: "approvedBy",
-        pipeline: [{ $project: { firstName: 1, lastName: 1 } }],
-      },
-    },
-    { $unwind: { path: "$approvedBy", preserveNullAndEmptyArrays: true } },
-    
-    // Lookup driver
-    {
-      $lookup: {
-        from: "users",
-        localField: "driverAssignment.driver",
-        foreignField: "_id",
-        as: "driverUser",
-        pipeline: [{ $project: { firstName: 1, lastName: 1, phone: 1 } }],
-      },
-    },
-    { $unwind: { path: "$driverUser", preserveNullAndEmptyArrays: true } },
-    
-    // Restructure fields
-    {
-      $addFields: {
-        "driverAssignment.driver": "$driverUser",
-        createdBy: "$createdByUser",
-      },
-    },
-    { $project: { driverUser: 0, createdByUser: 0 } },
-  ];
-
-  // Role filter (if needed, apply AFTER lookups only for final results)
-  if (roleId) {
-    lookupPipeline.push({
-      $match: {
-        "createdBy.role._id": new mongoose.Types.ObjectId(roleId),
-      },
-    });
-  }
-
-  // Build count and sum pipelines (no lookups needed)
-  const countPipeline = [
-    { $match: filter },
-    { $count: "total" },
-  ];
-
-  const sumPipeline = [
-    { $match: filter },
-    { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } },
-  ];
-
-  // If roleId filter exists, we need to add user lookup for count/sum too
-  if (roleId) {
-    const roleFilterStages = [
+    // Lookup pipeline (only for paginated results)
+    const lookupPipeline = [
+      // Lookup createdBy user with role
       {
         $lookup: {
           from: "users",
@@ -321,50 +209,162 @@ async getAllOrders(query = {}, currentUser) {
               },
             },
             { $unwind: { path: "$role", preserveNullAndEmptyArrays: true } },
+            { $project: { firstName: 1, lastName: 1, role: 1 } },
           ],
         },
       },
       { $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true } },
+
+      // Lookup customer
       {
-        $match: {
-          "createdByUser.role._id": new mongoose.Types.ObjectId(roleId),
+        $lookup: {
+          from: "customers",
+          localField: "customer",
+          foreignField: "_id",
+          as: "customer",
+          pipeline: [
+            {
+              $project: {
+                customerId: 1,
+                businessName: 1,
+                contactPersonName: 1,
+                phone: 1,
+              },
+            },
+          ],
         },
       },
+      { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
+
+      // Lookup godown
+      {
+        $lookup: {
+          from: "godowns",
+          localField: "godown",
+          foreignField: "_id",
+          as: "godown",
+          pipeline: [{ $project: { name: 1, location: 1 } }],
+        },
+      },
+      { $unwind: { path: "$godown", preserveNullAndEmptyArrays: true } },
+
+      // Lookup approvedBy
+      {
+        $lookup: {
+          from: "users",
+          localField: "approvedBy",
+          foreignField: "_id",
+          as: "approvedBy",
+          pipeline: [{ $project: { firstName: 1, lastName: 1 } }],
+        },
+      },
+      { $unwind: { path: "$approvedBy", preserveNullAndEmptyArrays: true } },
+
+      // Lookup driver
+      {
+        $lookup: {
+          from: "users",
+          localField: "driverAssignment.driver",
+          foreignField: "_id",
+          as: "driverUser",
+          pipeline: [{ $project: { firstName: 1, lastName: 1, phone: 1 } }],
+        },
+      },
+      { $unwind: { path: "$driverUser", preserveNullAndEmptyArrays: true } },
+
+      // Restructure fields
+      {
+        $addFields: {
+          "driverAssignment.driver": "$driverUser",
+          createdBy: "$createdByUser",
+        },
+      },
+      { $project: { driverUser: 0, createdByUser: 0 } },
     ];
 
-    countPipeline.splice(1, 0, ...roleFilterStages);
-    sumPipeline.splice(1, 0, ...roleFilterStages);
-  }
+    // Role filter (if needed, apply AFTER lookups only for final results)
+    if (roleId) {
+      lookupPipeline.push({
+        $match: {
+          "createdBy.role._id": new mongoose.Types.ObjectId(roleId),
+        },
+      });
+    }
 
-  // Execute all queries in parallel
-  const [orders, totalOrders, totalAmountSum] = await Promise.all([
-    Order.aggregate([...basePipeline, ...lookupPipeline]),
-    Order.aggregate(countPipeline).then((result) =>
-      result.length > 0 ? result[0].total : 0
-    ),
-    Order.aggregate(sumPipeline).then((result) =>
-      result.length > 0 ? result[0].totalSum : 0
-    ),
-  ]);
+    // Build count and sum pipelines (no lookups needed)
+    const countPipeline = [
+      { $match: filter },
+      { $count: "total" },
+    ];
 
-  const totalPages = Math.ceil(totalOrders / parseInt(limit));
+    const sumPipeline = [
+      { $match: filter },
+      { $group: { _id: null, totalSum: { $sum: "$totalAmount" } } },
+    ];
 
-  return {
-    success: true,
-    data: {
-      orders,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalOrders,
-        totalAmountSum,
-        limit: parseInt(limit),
-        hasNext: parseInt(page) < totalPages,
-        hasPrev: parseInt(page) > 1,
+    // If roleId filter exists, we need to add user lookup for count/sum too
+    if (roleId) {
+      const roleFilterStages = [
+        {
+          $lookup: {
+            from: "users",
+            localField: "createdBy",
+            foreignField: "_id",
+            as: "createdByUser",
+            pipeline: [
+              {
+                $lookup: {
+                  from: "roles",
+                  localField: "role",
+                  foreignField: "_id",
+                  as: "role",
+                },
+              },
+              { $unwind: { path: "$role", preserveNullAndEmptyArrays: true } },
+            ],
+          },
+        },
+        { $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true } },
+        {
+          $match: {
+            "createdByUser.role._id": new mongoose.Types.ObjectId(roleId),
+          },
+        },
+      ];
+
+      countPipeline.splice(1, 0, ...roleFilterStages);
+      sumPipeline.splice(1, 0, ...roleFilterStages);
+    }
+
+    // Execute all queries in parallel
+    const [orders, totalOrders, totalAmountSum] = await Promise.all([
+      Order.aggregate([...basePipeline, ...lookupPipeline]),
+      Order.aggregate(countPipeline).then((result) =>
+        result.length > 0 ? result[0].total : 0
+      ),
+      Order.aggregate(sumPipeline).then((result) =>
+        result.length > 0 ? result[0].totalSum : 0
+      ),
+    ]);
+
+    const totalPages = Math.ceil(totalOrders / parseInt(limit));
+
+    return {
+      success: true,
+      data: {
+        orders,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalOrders,
+          totalAmountSum,
+          limit: parseInt(limit),
+          hasNext: parseInt(page) < totalPages,
+          hasPrev: parseInt(page) > 1,
+        },
       },
-    },
-  };
-}
+    };
+  }
 
   async getOrderById(orderId) {
     const order = await Order.findById(orderId)
@@ -386,8 +386,8 @@ async getAllOrders(query = {}, currentUser) {
       const outstandingOrders = await Order.find({
         customer: customerId,
         type: "order", // Only consider orders, not visits
-        status: {$nin:["cancelled","rejected"]},
-        deliveryStatus:{$nin:["cancelled"]},
+        status: { $nin: ["cancelled", "rejected"] },
+        deliveryStatus: { $nin: ["cancelled"] },
         paymentStatus: { $in: ["pending", "partial", "overdue"] },
       })
         .select("totalAmount paidAmount")
@@ -880,7 +880,7 @@ async getAllOrders(query = {}, currentUser) {
     const oldValues = order.toObject();
 
     order.status = "approved";
-    order.deliveryStatus="delivered";
+    order.deliveryStatus = "delivered";
     order.approvedBy = approvedBy;
     order.approvedDate = new Date();
     order.updatedBy = approvedBy;
@@ -1844,185 +1844,113 @@ async getAllOrders(query = {}, currentUser) {
     };
   }
 
-// Get order statistics (supports optional godown scoping and all order filters)
-async getOrderStats(query = {}, currentUser) {
-  const {
-    search = "",
-    status = "",
-    deliveryStatus = "",
-    paymentStatus = "",
-    customerId = "",
-    dateFrom = "",
-    dateTo = "",
-    priority = "",
-    minAmount = "",
-    maxAmount = "",
-    godownId = "",
-    roleId = "",
-  } = query;
+  // Get order statistics (supports optional godown scoping and all order filters)
+  async getOrderStats(query = {}, currentUser) {
+    const {
+      search = "",
+      status = "",
+      deliveryStatus = "",
+      paymentStatus = "",
+      customerId = "",
+      dateFrom = "",
+      dateTo = "",
+      priority = "",
+      minAmount = "",
+      maxAmount = "",
+      godownId = "",
+      roleId = "",
+    } = query;
 
-  const filter = {};
+    const filter = {};
 
-  // 🔍 Search filter
-  if (search) {
-    filter.$or = [{ orderNumber: { $regex: search, $options: "i" } }];
-  }
-
-  // ⚙️ Common filters
-  if (status) filter.status = status;
-  if (deliveryStatus) filter.deliveryStatus = deliveryStatus;
-  if (paymentStatus) filter.paymentStatus = paymentStatus;
-  if (customerId) filter.customer = new mongoose.Types.ObjectId(customerId);
-  if (priority) filter.priority = priority;
-
-  // 💰 Amount range
-  if (minAmount || maxAmount) {
-    filter.totalAmount = {};
-    if (minAmount) filter.totalAmount.$gte = parseFloat(minAmount);
-    if (maxAmount) filter.totalAmount.$lte = parseFloat(maxAmount);
-  }
-
-  // 📅 Date range
-  if (dateFrom || dateTo) {
-    filter.orderDate = {};
-    if (dateFrom) filter.orderDate.$gte = new Date(dateFrom);
-    if (dateTo) {
-      const endDate = new Date(dateTo);
-      endDate.setHours(23, 59, 59, 999);
-      filter.orderDate.$lte = endDate;
+    // 🔍 Search filter
+    if (search) {
+      filter.$or = [{ orderNumber: { $regex: search, $options: "i" } }];
     }
-  }
 
-  // 🏬 Godown or role-based scoping
-  if (godownId && godownId !== "") {
-    filter.godown = new mongoose.Types.ObjectId(godownId);
-  } else if (currentUser && currentUser.role) {
-    const roleName = currentUser.role.name;
-    if (roleName === "Driver") {
-      filter["driverAssignment.driver"] = currentUser._id;
-    } else if (["Sales Executive", "Staff"].includes(roleName)) {
-      filter.createdBy = currentUser._id;
-    } else if (roleName !== "Super Admin") {
-      if (
-        currentUser.accessibleGodowns &&
-        currentUser.accessibleGodowns.length > 0
-      ) {
-        const accessibleIds = currentUser.accessibleGodowns.map((godown) =>
-          typeof godown === "object" && godown._id ? godown._id : godown
-        );
-        filter.godown = { $in: accessibleIds };
-      } else if (currentUser.primaryGodown) {
-        const primaryGodownId =
-          typeof currentUser.primaryGodown === "object" &&
-          currentUser.primaryGodown._id
-            ? currentUser.primaryGodown._id
-            : currentUser.primaryGodown;
-        filter.godown = primaryGodownId;
-      } else {
-        filter.createdBy = currentUser._id;
+    // ⚙️ Common filters
+    if (status) filter.status = status;
+    if (deliveryStatus) filter.deliveryStatus = deliveryStatus;
+    if (paymentStatus) filter.paymentStatus = paymentStatus;
+    if (customerId) filter.customer = new mongoose.Types.ObjectId(customerId);
+    if (priority) filter.priority = priority;
+
+    // 💰 Amount range
+    if (minAmount || maxAmount) {
+      filter.totalAmount = {};
+      if (minAmount) filter.totalAmount.$gte = parseFloat(minAmount);
+      if (maxAmount) filter.totalAmount.$lte = parseFloat(maxAmount);
+    }
+
+    // 📅 Date range
+    if (dateFrom || dateTo) {
+      filter.orderDate = {};
+      if (dateFrom) filter.orderDate.$gte = new Date(dateFrom);
+      if (dateTo) {
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        filter.orderDate.$lte = endDate;
       }
     }
-  }
 
-  const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
-  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-
-  // Helper function to create aggregation pipeline with role filter
-  const createPipeline = (matchConditions) => {
-    const pipeline = [{ $match: matchConditions }];
-
-    if (roleId) {
-      pipeline.push(
-        {
-          $lookup: {
-            from: "users",
-            localField: "createdBy",
-            foreignField: "_id",
-            as: "createdByUser",
-          },
-        },
-        { $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true } },
-        { $match: { "createdByUser.role": new mongoose.Types.ObjectId(roleId) } }
-      );
+    // 🏬 Godown or role-based scoping
+    if (godownId && godownId !== "") {
+      filter.godown = new mongoose.Types.ObjectId(godownId);
+    } else if (currentUser && currentUser.role) {
+      const roleName = currentUser.role.name;
+      if (roleName === "Driver") {
+        filter["driverAssignment.driver"] = currentUser._id;
+      } else if (["Sales Executive", "Staff"].includes(roleName)) {
+        filter.createdBy = currentUser._id;
+      } else if (roleName !== "Super Admin") {
+        if (
+          currentUser.accessibleGodowns &&
+          currentUser.accessibleGodowns.length > 0
+        ) {
+          const accessibleIds = currentUser.accessibleGodowns.map((godown) =>
+            typeof godown === "object" && godown._id ? godown._id : godown
+          );
+          filter.godown = { $in: accessibleIds };
+        } else if (currentUser.primaryGodown) {
+          const primaryGodownId =
+            typeof currentUser.primaryGodown === "object" &&
+              currentUser.primaryGodown._id
+              ? currentUser.primaryGodown._id
+              : currentUser.primaryGodown;
+          filter.godown = primaryGodownId;
+        } else {
+          filter.createdBy = currentUser._id;
+        }
+      }
     }
 
-    return pipeline;
-  };
+    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
-  // 🧮 Aggregations
-  const [
-    totalOrders,
-    totalVisits,
-    pendingOrders,
-    approvedOrders,
-    completedOrders,
-    rejectedOrders,
-    todayOrders,
-    todayVisits,
-    monthlyRevenue,
-  ] = await Promise.all([
-    Order.aggregate([
-      ...createPipeline({ ...filter, type: "order" }),
-      { $count: "count" },
-    ]).then((res) => res[0]?.count || 0),
+    // Helper function to create aggregation pipeline with role filter
+    const createPipeline = (matchConditions) => {
+      const pipeline = [{ $match: matchConditions }];
 
-    Order.aggregate([
-      ...createPipeline({ ...filter, type: "visit" }),
-      { $count: "count" },
-    ]).then((res) => res[0]?.count || 0),
+      if (roleId) {
+        pipeline.push(
+          {
+            $lookup: {
+              from: "users",
+              localField: "createdBy",
+              foreignField: "_id",
+              as: "createdByUser",
+            },
+          },
+          { $unwind: { path: "$createdByUser", preserveNullAndEmptyArrays: true } },
+          { $match: { "createdByUser.role": new mongoose.Types.ObjectId(roleId) } }
+        );
+      }
 
-    Order.aggregate([
-      ...createPipeline({ ...filter, type: "order", status: "pending" }),
-      { $count: "count" },
-    ]).then((res) => res[0]?.count || 0),
+      return pipeline;
+    };
 
-    Order.aggregate([
-      ...createPipeline({ ...filter, type: "order", status: "approved" }),
-      { $count: "count" },
-    ]).then((res) => res[0]?.count || 0),
-
-    Order.aggregate([
-      ...createPipeline({ ...filter, type: "order", status: "completed" }),
-      { $count: "count" },
-    ]).then((res) => res[0]?.count || 0),
-
-    Order.aggregate([
-      ...createPipeline({ ...filter, type: "order", status: "rejected" }),
-      { $count: "count" },
-    ]).then((res) => res[0]?.count || 0),
-
-    Order.aggregate([
-      ...createPipeline({ ...filter, type: "order", orderDate: { $gte: startOfToday } }),
-      { $count: "count" },
-    ]).then((res) => res[0]?.count || 0),
-
-    Order.aggregate([
-      ...createPipeline({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }),
-      { $count: "count" },
-    ]).then((res) => res[0]?.count || 0),
-
-    // 💵 Monthly revenue — apply all filters + default monthly range if no dateFrom/dateTo
-    (() => {
-      const revenueFilter = { ...filter, type: "order" };
-
-      return Order.aggregate([
-        ...createPipeline({
-          ...revenueFilter,
-          status: status
-            ? status
-            : { $in: ["pending", "approved", "delivered", "out_for_delivery", "driver_assigned"] },
-          deliveryStatus: deliveryStatus
-            ? deliveryStatus
-            : { $in: ["pending", "delivered"] },
-        }),
-        { $group: { _id: null, total: { $sum: "$totalAmount" } } },
-      ]).then((res) => res[0]?.total || 0);
-    })(),
-  ]);
-
-  return {
-    success: true,
-    data: {
+    // 🧮 Aggregations
+    const [
       totalOrders,
       totalVisits,
       pendingOrders,
@@ -2032,9 +1960,81 @@ async getOrderStats(query = {}, currentUser) {
       todayOrders,
       todayVisits,
       monthlyRevenue,
-    },
-  };
-}
+    ] = await Promise.all([
+      Order.aggregate([
+        ...createPipeline({ ...filter, type: "order" }),
+        { $count: "count" },
+      ]).then((res) => res[0]?.count || 0),
+
+      Order.aggregate([
+        ...createPipeline({ ...filter, type: "visit" }),
+        { $count: "count" },
+      ]).then((res) => res[0]?.count || 0),
+
+      Order.aggregate([
+        ...createPipeline({ ...filter, type: "order", status: "pending" }),
+        { $count: "count" },
+      ]).then((res) => res[0]?.count || 0),
+
+      Order.aggregate([
+        ...createPipeline({ ...filter, type: "order", status: "approved" }),
+        { $count: "count" },
+      ]).then((res) => res[0]?.count || 0),
+
+      Order.aggregate([
+        ...createPipeline({ ...filter, type: "order", status: "completed" }),
+        { $count: "count" },
+      ]).then((res) => res[0]?.count || 0),
+
+      Order.aggregate([
+        ...createPipeline({ ...filter, type: "order", status: "rejected" }),
+        { $count: "count" },
+      ]).then((res) => res[0]?.count || 0),
+
+      Order.aggregate([
+        ...createPipeline({ ...filter, type: "order", orderDate: { $gte: startOfToday } }),
+        { $count: "count" },
+      ]).then((res) => res[0]?.count || 0),
+
+      Order.aggregate([
+        ...createPipeline({ ...filter, type: "visit", orderDate: { $gte: startOfToday } }),
+        { $count: "count" },
+      ]).then((res) => res[0]?.count || 0),
+
+      // 💵 Monthly revenue — apply all filters + default monthly range if no dateFrom/dateTo
+      (() => {
+        const revenueFilter = { ...filter, type: "order" };
+
+        return Order.aggregate([
+          ...createPipeline({
+            ...revenueFilter,
+            status: status
+              ? status
+              : { $in: ["pending", "approved", "delivered", "out_for_delivery", "driver_assigned"] },
+            deliveryStatus: deliveryStatus
+              ? deliveryStatus
+              : { $in: ["pending", "delivered"] },
+          }),
+          { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+        ]).then((res) => res[0]?.total || 0);
+      })(),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        totalOrders,
+        totalVisits,
+        pendingOrders,
+        approvedOrders,
+        completedOrders,
+        rejectedOrders,
+        todayOrders,
+        todayVisits,
+        monthlyRevenue,
+      },
+    };
+  }
 
 
   // Quick-order: expose catalog
@@ -2216,6 +2216,7 @@ async getOrderStats(query = {}, currentUser) {
       scheduleDate,
       capturedImage,
       captureLocation,
+      perWeekCapacity,
     } = visitData;
 
     // Validate customer
@@ -2251,6 +2252,7 @@ async getOrderStats(query = {}, currentUser) {
       items: [], // Visits don't have items
       subtotal: 0,
       totalAmount: 0,
+      perWeekCapacity,
     });
     if (customer.assignedGodownId) {
       visit.godown = customer.assignedGodownId;
@@ -2520,7 +2522,7 @@ async getOrderStats(query = {}, currentUser) {
         //   .populate("orderId", "orderNumber type")
         //   .populate("customerId", "name email phone")
         //   .populate("recordedBy", "name email");
-  const existingRecord = await DeliveryTimePdfChanges.findOne({ orderId })
+        const existingRecord = await DeliveryTimePdfChanges.findOne({ orderId })
           .populate("orderId", "orderNumber type")
           .populate("customerId", "name email phone")
           .populate("recordedBy", "name email");
@@ -2638,13 +2640,13 @@ async getOrderStats(query = {}, currentUser) {
       const pendingOrders = await Order.find({
         customer: customerId,
         type: 'order',
-        status: { $nin:["cancelled","rejected"]},
-        deliveryStatus: { $nin:["cancelled"]},
+        status: { $nin: ["cancelled", "rejected"] },
+        deliveryStatus: { $nin: ["cancelled"] },
         $expr: { $gt: ['$totalAmount', '$paidAmount'] }
       })
-      .select('_id orderNumber totalAmount paidAmount')
-      .sort({ orderDate: -1 })
-      .lean();
+        .select('_id orderNumber totalAmount paidAmount')
+        .sort({ orderDate: -1 })
+        .lean();
 
       return {
         success: true,
